@@ -1,0 +1,62 @@
+name: Feature request
+description: Suggest an improvement for LLMWiki Chat.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for focused feature requests. Keep examples public and non-sensitive.
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What workflow should this improve?
+    validations:
+      required: true
+  - type: checkboxes
+    id: usage_modes
+    attributes:
+      label: Usage mode impact
+      options:
+        - label: llmwiki-serve end-to-end
+        - label: External Agent Runtime console
+        - label: Both supported usage modes
+        - label: Not sure
+  - type: checkboxes
+    id: affected_area
+    attributes:
+      label: Affected area
+      options:
+        - label: Agent Runtime adapter
+        - label: Mock Agent development adapter
+        - label: Knowledge Sources
+        - label: HTTP Knowledge Source endpoint
+        - label: MCP Knowledge Source endpoint
+        - label: A2A Knowledge Source endpoint
+        - label: Chat UI
+        - label: Graph/details inspector
+        - label: Documentation
+        - label: CI or project maintenance
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility notes
+      description: Explain whether this should work with local llmwiki-serve, an external Agent Runtime, Knowledge Source endpoint protocols, or both usage modes.
+  - type: checkboxes
+    id: data_safety
+    attributes:
+      label: Data safety
+      options:
+        - label: This request does not include real API keys, tokens, private endpoint URLs, private exports, raw sensitive logs, or screenshots exposing private infrastructure.
+          required: true

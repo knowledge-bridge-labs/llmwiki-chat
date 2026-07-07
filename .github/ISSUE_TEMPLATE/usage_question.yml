@@ -1,0 +1,42 @@
+name: Usage question
+description: Ask a setup, source connection, runtime, or workbench usage question.
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for non-sensitive usage questions. For suspected security vulnerabilities, follow SECURITY.md instead of opening a public issue.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Setup or installation
+        - Knowledge Source connection
+        - Runtime selection
+        - llmwiki-agent-bridge connection
+        - UI behavior
+        - Network or CORS
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Describe what you are trying to do and where you got stuck.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include OS, browser, Node/npm version, chat commit or version, sanitized source/runtime URLs, and sanitized UI state when relevant.
+  - type: checkboxes
+    id: data_safety
+    attributes:
+      label: Data safety
+      options:
+        - label: This question does not include credentials, bearer tokens, private endpoint URLs, private screenshots, raw sensitive wiki content, or unredacted logs.
+          required: true

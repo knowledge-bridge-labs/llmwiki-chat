@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support routing
+    url: https://github.com/knowledge-bridge-labs/llmwiki-chat/blob/main/SUPPORT.md
+    about: Check where to ask product, adapter, and answer-quality questions.
+  - name: Security vulnerability
+    url: https://github.com/knowledge-bridge-labs/llmwiki-chat/blob/main/SECURITY.md
+    about: Follow the repository security policy for suspected vulnerabilities.
+  - name: Conduct concern
+    url: https://github.com/knowledge-bridge-labs/llmwiki-chat/blob/main/CODE_OF_CONDUCT.md#reporting-and-enforcement
+    about: Do not open a public issue for conduct reports; use the private routing in the code of conduct.

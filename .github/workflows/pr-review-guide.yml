@@ -1,0 +1,142 @@
+name: pr-review-guide
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-guide:
+    name: review guide
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post contributor review guide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          files="$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename')"
+
+          ui=false
+          source=false
+          runtime=false
+          graph=false
+          docs=false
+          tests=false
+          e2e=false
+          ci=false
+          security=false
+          packaging=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              src/App.tsx|src/main.tsx|src/components/*|src/styles.css)
+                ui=true
+                ;;
+              src/*source*|src/*knowledge*|src/*client*|src/*protocol*)
+                source=true
+                ;;
+              src/*runtime*|src/*agent*|src/*adapter*)
+                runtime=true
+                ;;
+              src/*graph*|src/*citation*|src/*trace*|src/*artifact*)
+                graph=true
+                ;;
+              e2e/*|playwright.config.*)
+                e2e=true
+                ;;
+              src/*.test.*|test/*)
+                tests=true
+                ;;
+              README.md|CHANGELOG.md|CONTRIBUTING.md|docs/*)
+                docs=true
+                ;;
+              .github/*|.github/workflows/*|vite.config.*|tsconfig*.json|eslint.config.*)
+                ci=true
+                ;;
+              package.json|package-lock.json)
+                packaging=true
+                ;;
+              SECURITY.md|SUPPORT.md|CODE_OF_CONDUCT.md|THIRD_PARTY_NOTICES.md|THIRD_PARTY_LICENSES.md)
+                security=true
+                ;;
+            esac
+          done <<< "$files"
+
+          {
+            echo "<!-- llmwiki-chat-pr-review-guide -->"
+            echo "## Automated Review Guide"
+            echo
+            echo "This is a contributor aid, not a maintainer approval. It is generated from changed paths and points reviewers at the checks that usually matter for this repo."
+            echo
+            echo "Changed files:"
+            echo
+            printf '%s\n' "$files" | sed 's/^/    /'
+            echo
+            echo "Review focus:"
+            if [ "$ui" = true ]; then
+              echo "- Chat UI: verify source connection, runtime selection, graph/details panels, citations, artifacts, loading, empty, and error states remain accessible and responsive."
+            fi
+            if [ "$source" = true ]; then
+              echo "- Knowledge Source clients: check HTTP, MCP-style, and A2A-style endpoint behavior, draft handling, local HTTP policy, CORS assumptions, and source error messages."
+            fi
+            if [ "$runtime" = true ]; then
+              echo "- Runtime adapters: verify Local Development Runtime, Custom A2A, Hermes, DeepAgents, and external-runtime slots keep trace and citation artifacts stable."
+            fi
+            if [ "$graph" = true ]; then
+              echo "- Graph/evidence rendering: verify graph continuity, cited source IDs, artifact display, and answer grounding remain inspectable."
+            fi
+            if [ "$packaging" = true ]; then
+              echo "- Packaging/dependencies: verify npm package metadata, built dist contents, third-party license artifacts, lockfile changes, and package dry-run output."
+            fi
+            if [ "$ci" = true ]; then
+              echo "- CI/build tooling: keep lint, typecheck, unit, E2E, build, license, and package checks aligned with release expectations."
+            fi
+            if [ "$security" = true ]; then
+              echo "- Security/governance: check private disclosure, source URL policy, runtime token handling, third-party notices, and sensitive screenshot/log handling."
+            fi
+            if [ "$docs" = true ]; then
+              echo "- Docs/release notes: keep runtime support, protocol posture, validation, network caveats, and known non-claims accurate."
+            fi
+            if [ "$tests" = true ]; then
+              echo "- Unit tests: cover user-visible state, protocol parsing, source/runtime failures, and citation or trace rendering."
+            fi
+            if [ "$e2e" = true ]; then
+              echo "- E2E tests: verify deterministic sample flows and avoid depending on private wiki content or live runtime state unless explicitly marked."
+            fi
+            echo
+            echo "Contributor checklist:"
+            echo "- Fill in the PR template's usage mode, runtime/endpoint impact, validation, and data-handling sections."
+            echo "- Add focused tests for behavior changes and update CHANGELOG.md for notable compatibility, UI, security, or maintenance changes."
+            echo "- Run the documented validation commands, or explain skipped checks."
+            echo "- Call out any generated or AI-assisted implementation area that deserves closer human review."
+          } > review-guide.md
+
+          comment_id="$(
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+              --paginate \
+              --jq '.[] | select(.body | contains("llmwiki-chat-pr-review-guide")) | .id' \
+              | head -n 1 \
+              || true
+          )"
+
+          if [ -n "$comment_id" ]; then
+            if ! gh api -X PATCH "repos/$REPO/issues/comments/$comment_id" -F body=@review-guide.md >/dev/null; then
+              echo "::warning::Unable to update automated review guide comment."
+            fi
+          else
+            if ! gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@review-guide.md >/dev/null; then
+              echo "::warning::Unable to post automated review guide comment."
+            fi
+          fi

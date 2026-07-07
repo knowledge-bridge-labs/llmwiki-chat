@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build, coverage, and package artifacts
+dist/
+coverage/
+.nyc_output/
+*.tgz
+
+# Test and local QA artifacts
+playwright-report/
+test-results/
+artifacts/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+logs/
+.runtime-logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

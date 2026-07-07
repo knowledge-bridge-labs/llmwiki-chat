@@ -1,0 +1,89 @@
+{
+  "name": "llmwiki-chat",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Accessible Agent Runtime console for Markdown/wiki Knowledge Source endpoints.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knowledge-bridge-labs/llmwiki-chat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/knowledge-bridge-labs/llmwiki-chat/issues"
+  },
+  "homepage": "https://knowledge-bridge-labs.github.io/llmwiki-docs/",
+  "keywords": [
+    "llmwiki",
+    "agent-runtime",
+    "mcp",
+    "a2a",
+    "knowledge-graph",
+    "rag"
+  ],
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SUPPORT.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "THIRD_PARTY_NOTICES.md",
+    "THIRD_PARTY_LICENSES.md"
+  ],
+  "packageManager": "npm@10.9.7",
+  "engines": {
+    "node": ">=22.12",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "clean:dist": "node scripts/clean-dist.mjs",
+    "build": "tsc -b && vite build",
+    "build:release": "npm run clean:dist && npm run licenses:check && npm run build && npm run licenses:copy",
+    "prepack": "npm run build:release",
+    "pack:dry-run": "npm run build:release && npm run licenses:check && npm pack --dry-run --json --ignore-scripts",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run test:e2e && npm run build && npm run pack:dry-run && npm audit --audit-level=moderate",
+    "licenses:generate": "node scripts/generate-third-party-licenses.mjs production THIRD_PARTY_LICENSES.md",
+    "licenses:check": "node scripts/generate-third-party-licenses.mjs production THIRD_PARTY_LICENSES.md --check",
+    "licenses:copy": "node scripts/copy-license-artifacts.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:a2a-runtime": "playwright test e2e/live-a2a-runtime.spec.ts",
+    "test:e2e:live": "node scripts/run-live-serve-e2e.mjs",
+    "test:e2e:sample-matrix": "node scripts/run-sample-graph-matrix-e2e.mjs",
+    "test:e2e:sample-matrix:bridge": "node scripts/run-sample-graph-matrix-e2e.mjs --bridge",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^16.5.0",
+    "jsdom": "^27.3.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.50.0",
+    "vite": "^8.1.3",
+    "vitest": "^4.0.16"
+  }
+}

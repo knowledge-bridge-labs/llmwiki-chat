@@ -1,0 +1,90 @@
+name: Adapter or protocol compatibility
+description: Report an Agent Runtime adapter or Knowledge Source endpoint compatibility issue.
+title: '[Adapter]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for Agent Runtime adapter contracts, Knowledge Source endpoint protocols, trace, citation, graph, or compatibility problems. For suspected vulnerabilities, follow SECURITY.md instead.
+  - type: dropdown
+    id: usage_mode
+    attributes:
+      label: Usage mode
+      options:
+        - llmwiki-serve end-to-end
+        - External Agent Runtime console
+        - Both supported usage modes
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Agent Runtime
+      options:
+        - Mock Agent
+        - Hermes (A2A slot, not product-validated yet)
+        - DeepAgents (A2A slot, not product-validated yet)
+        - Copilot (external MCP/A2A-consuming runtime candidate)
+        - Custom A2A
+        - Other or not applicable
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Knowledge Source endpoint protocol
+      options:
+        - HTTP
+        - MCP
+        - A2A
+        - Multiple
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: Contract or compatibility issue
+      description: Describe the adapter behavior, endpoint response, trace event, citation, graph data, or error handling that does not match the documented contract.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: validation
+    attributes:
+      label: Validation already tried
+      options:
+        - label: npm run lint
+        - label: npm run test
+        - label: Local llmwiki-serve smoke test
+        - label: External Agent Runtime or Knowledge Source endpoint smoke test
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact credentials, bearer tokens, private endpoint URLs, request logs with secrets, raw sensitive data, and private infrastructure details.
+      render: text
+  - type: checkboxes
+    id: data_safety
+    attributes:
+      label: Data safety
+      options:
+        - label: This report does not include real credentials, tokens, private endpoint URLs, private exports, raw sensitive wiki content, or unredacted runtime logs.
+          required: true

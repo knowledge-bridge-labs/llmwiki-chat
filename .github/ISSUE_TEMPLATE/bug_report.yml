@@ -1,0 +1,96 @@
+name: Bug report
+description: Report a reproducible problem in LLMWiki Chat.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for reproducible product defects. For suspected security vulnerabilities, follow SECURITY.md instead of opening a public issue.
+  - type: dropdown
+    id: usage_mode
+    attributes:
+      label: Usage mode
+      options:
+        - llmwiki-serve end-to-end
+        - External Agent Runtime console
+        - Both supported usage modes
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Agent Runtime
+      options:
+        - Mock Agent
+        - Hermes (A2A slot, not product-validated yet)
+        - DeepAgents (A2A slot, not product-validated yet)
+        - Copilot (external MCP/A2A-consuming runtime candidate)
+        - Custom A2A
+        - Other or not applicable
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Knowledge Source endpoint protocol
+      options:
+        - HTTP
+        - MCP
+        - A2A
+        - Multiple
+        - Not applicable
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the visible behavior, error state, or regression.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest public reproduction steps.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include browser, Node version, commit or version, and whether the endpoint is local, hosted, or externally managed. Do not include private URLs.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact credentials, tokens, private endpoint URLs, request payloads with secrets, sensitive exports, and private infrastructure details.
+      render: text
+  - type: checkboxes
+    id: mock_agent
+    attributes:
+      label: Mock Agent boundary
+      options:
+        - label: If this involves Mock Agent, I am reporting UI, tool-call, trace, citation, or graph behavior rather than treating mock answer quality as the production baseline.
+  - type: checkboxes
+    id: data_safety
+    attributes:
+      label: Data safety
+      options:
+        - label: This report does not include real credentials, tokens, private endpoint URLs, private exports, raw sensitive wiki content, or unredacted runtime logs.
+          required: true
