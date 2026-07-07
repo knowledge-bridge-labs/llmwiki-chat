@@ -131,12 +131,11 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is prepared for public preview and is currently in private org
-staging until the public-unpublished gate passes. Source-checkout usage is the
-supported path today. Package metadata and repository links target the Knowledge
-Bridge Labs organization; package-install links become active after package
-publication. See the [release checklist](docs/release.md) for the current
-posture.
+`llmwiki-chat` is in public source-checkout preview. Source-checkout usage is
+the supported path today. Package metadata and repository links target the
+Knowledge Bridge Labs organization; package-install links become active after
+package publication. See the [release checklist](docs/release.md) for the
+current posture.
 
 ## Demo
 
