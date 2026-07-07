@@ -1892,21 +1892,225 @@ function answerHasMappedCitationAnchor(
 ): boolean {
   if (!citations.length) return false
 
-  const markdownLinks = text.matchAll(/\[([^\]]+)\]\(\s*(#[^\s)]+)[^)]*\)/g)
-  for (const match of markdownLinks) {
-    if (citationForMarkdownReference(match[2], match[1], citations, citationReferenceIds)) return true
+  for (const reference of markdownCitationReferences(text)) {
+    if (citationForMarkdownReference(reference.href, reference.label, citations, citationReferenceIds)) return true
   }
 
-  const htmlLinks = text.matchAll(/<a\s+[^>]*href=(["'])(#[^"']+)\1[^>]*>(.*?)<\/a>/gis)
-  for (const match of htmlLinks) {
-    if (citationForMarkdownReference(match[2], stripHtmlText(match[3] || ''), citations, citationReferenceIds)) return true
+  for (const reference of htmlCitationReferences(text)) {
+    if (citationForMarkdownReference(reference.href, reference.label, citations, citationReferenceIds)) return true
   }
 
   return false
 }
 
-function stripHtmlText(value: string): string {
-  return value.replace(/<[^>]*>/g, '').trim()
+type CitationReferenceCandidate = {
+  href: string
+  label: string
+}
+
+function markdownCitationReferences(text: string): CitationReferenceCandidate[] {
+  const references: CitationReferenceCandidate[] = []
+  let searchIndex = 0
+  while (searchIndex < text.length) {
+    const labelStart = text.indexOf('[', searchIndex)
+    if (labelStart < 0) break
+    if (isEscapedMarkdownCharacter(text, labelStart)) {
+      searchIndex = labelStart + 1
+      continue
+    }
+
+    const labelEnd = findMarkdownCharacter(text, ']', labelStart + 1)
+    if (labelEnd < 0) break
+    if (text[labelEnd + 1] !== '(') {
+      searchIndex = labelStart + 1
+      continue
+    }
+
+    const hrefStart = skipMarkdownWhitespace(text, labelEnd + 2)
+    if (text[hrefStart] !== '#') {
+      searchIndex = labelStart + 1
+      continue
+    }
+
+    let hrefEnd = hrefStart + 1
+    while (
+      hrefEnd < text.length
+      && text[hrefEnd] !== ')'
+      && !isMarkdownWhitespace(text[hrefEnd])
+    ) {
+      hrefEnd += 1
+    }
+
+    const linkEnd = findMarkdownCharacter(text, ')', hrefEnd)
+    if (linkEnd < 0) break
+    references.push({
+      href: text.slice(hrefStart, hrefEnd),
+      label: unescapeMarkdownText(text.slice(labelStart + 1, labelEnd)),
+    })
+    searchIndex = linkEnd + 1
+  }
+  return references
+}
+
+function htmlCitationReferences(text: string): CitationReferenceCandidate[] {
+  const references: CitationReferenceCandidate[] = []
+  let searchIndex = 0
+
+  while (searchIndex < text.length) {
+    const openStart = indexOfCaseInsensitive(text, '<a', searchIndex)
+    if (openStart < 0) break
+    if (!isHtmlTagNameBoundary(text[openStart + 2])) {
+      searchIndex = openStart + 2
+      continue
+    }
+
+    const openEnd = htmlTagEndIndex(text, openStart + 2)
+    if (openEnd < 0) break
+    const href = hrefFromAnchorStartTag(text.slice(openStart, openEnd + 1))
+    const closeStart = indexOfCaseInsensitive(text, '</a', openEnd + 1)
+    if (closeStart < 0) break
+
+    if (href.startsWith('#')) {
+      references.push({
+        href,
+        label: htmlTextContent(text.slice(openEnd + 1, closeStart)).trim(),
+      })
+    }
+    searchIndex = closeStart + 3
+  }
+
+  return references
+}
+
+function indexOfCaseInsensitive(value: string, needle: string, start: number): number {
+  const lowerNeedle = needle.toLowerCase()
+  const maxStart = value.length - needle.length
+  for (let index = start; index <= maxStart; index += 1) {
+    if (value.slice(index, index + needle.length).toLowerCase() === lowerNeedle) return index
+  }
+  return -1
+}
+
+function isHtmlTagNameBoundary(char: string | undefined): boolean {
+  return char === undefined || char === '>' || char === '/' || isMarkdownWhitespace(char)
+}
+
+function htmlTagEndIndex(value: string, start: number): number {
+  let quote = ''
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index]
+    if (quote) {
+      if (char === quote) quote = ''
+    } else if (char === '"' || char === "'") {
+      quote = char
+    } else if (char === '>') {
+      return index
+    }
+  }
+  return -1
+}
+
+function hrefFromAnchorStartTag(tag: string): string {
+  let index = 2
+
+  while (index < tag.length) {
+    index = skipMarkdownWhitespace(tag, index)
+    if (tag[index] === '>' || tag[index] === '/') break
+
+    const nameStart = index
+    while (
+      index < tag.length
+      && tag[index] !== '='
+      && tag[index] !== '>'
+      && !isMarkdownWhitespace(tag[index])
+    ) {
+      index += 1
+    }
+    const name = tag.slice(nameStart, index).toLowerCase()
+    index = skipMarkdownWhitespace(tag, index)
+
+    let value = ''
+    if (tag[index] === '=') {
+      index = skipMarkdownWhitespace(tag, index + 1)
+      const quote = tag[index] === '"' || tag[index] === "'" ? tag[index] : ''
+      if (quote) {
+        const valueStart = index + 1
+        const valueEnd = tag.indexOf(quote, valueStart)
+        if (valueEnd < 0) break
+        value = tag.slice(valueStart, valueEnd)
+        index = valueEnd + 1
+      } else {
+        const valueStart = index
+        while (index < tag.length && tag[index] !== '>' && !isMarkdownWhitespace(tag[index])) index += 1
+        value = tag.slice(valueStart, index)
+      }
+    }
+
+    if (name === 'href') return value
+  }
+
+  return ''
+}
+
+function htmlTextContent(value: string): string {
+  let output = ''
+  let index = 0
+
+  while (index < value.length) {
+    if (value[index] !== '<') {
+      output += value[index]
+      index += 1
+      continue
+    }
+
+    const tagEnd = htmlTagEndIndex(value, index + 1)
+    if (tagEnd < 0) break
+    index = tagEnd + 1
+  }
+
+  return output
+}
+
+function findMarkdownCharacter(value: string, needle: string, start: number): number {
+  let index = start
+  while (index < value.length) {
+    if (value[index] === needle && !isEscapedMarkdownCharacter(value, index)) return index
+    index += 1
+  }
+  return -1
+}
+
+function isEscapedMarkdownCharacter(value: string, index: number): boolean {
+  let slashCount = 0
+  let cursor = index - 1
+  while (cursor >= 0 && value[cursor] === '\\') {
+    slashCount += 1
+    cursor -= 1
+  }
+  return slashCount % 2 === 1
+}
+
+function unescapeMarkdownText(value: string): string {
+  let output = ''
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '\\' && index + 1 < value.length) {
+      output += value[index + 1]
+      index += 1
+    } else {
+      output += value[index]
+    }
+  }
+  return output
+}
+
+function skipMarkdownWhitespace(value: string, start: number): number {
+  let index = start
+  while (index < value.length && isMarkdownWhitespace(value[index])) index += 1
+  return index
+}
+
+function isMarkdownWhitespace(char: string | undefined): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f'
 }
 
 function AgentRuntimeList({

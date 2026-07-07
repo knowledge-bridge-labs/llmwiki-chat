@@ -702,24 +702,161 @@ function formatSourceSnippetMarkdown(snippet: string): string {
   let text = snippet.trim()
   if (!text) return 'No snippet returned.'
 
-  text = text.replace(/\s+(#{1,6}\s+)/g, '\n\n$1')
-  text = text.replace(/\s+\|\s+\|\s+/g, ' |\n| ')
-
-  let previous = ''
-  while (previous !== text) {
-    previous = text
-    text = text.replace(
-      /(#{1,6}\s+[^|\n]+?)\s+\|\s*([^|\n]+(?:\s*\|\s*[^|\n]+)+\s*\|\n\|\s*-{3,})/g,
-      '$1\n\n| $2',
-    )
-    text = text.replace(
-      /([.!?])\s+\|\s*([^|\n]+(?:\s*\|\s*[^|\n]+)+\s*\|\n\|\s*-{3,})/g,
-      '$1\n\n| $2',
-    )
-    text = text.replace(/(\|[^\n]+\|)\s+(#{1,6}\s+)/g, '$1\n\n$2')
-  }
+  text = breakBeforeInlineHeadings(text)
+  text = breakFlattenedTableRows(text)
+  text = separateInlineTablesAndHeadings(text)
 
   return text
+}
+
+function breakBeforeInlineHeadings(value: string): string {
+  let output = ''
+  let index = 0
+  while (index < value.length) {
+    if (isWhitespace(value[index])) {
+      const markerStart = skipWhitespace(value, index)
+      if (markdownHeadingMarkerLength(value, markerStart)) {
+        output = `${output.trimEnd()}\n\n`
+        index = markerStart
+        continue
+      }
+    }
+    output += value[index]
+    index += 1
+  }
+  return output
+}
+
+function breakFlattenedTableRows(value: string): string {
+  let output = ''
+  let index = 0
+  while (index < value.length) {
+    if (value[index] === '|' && index > 0 && isInlineWhitespace(value[index - 1])) {
+      const nextPipe = skipInlineWhitespace(value, index + 1)
+      const nextValue = skipInlineWhitespace(value, nextPipe + 1)
+      if (value[nextPipe] === '|' && nextPipe > index + 1 && nextValue > nextPipe + 1) {
+        output += '|\n| '
+        index = nextValue
+        continue
+      }
+    }
+    output += value[index]
+    index += 1
+  }
+  return output
+}
+
+function separateInlineTablesAndHeadings(value: string): string {
+  const lines = value.split('\n')
+  const formatted: string[] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (index + 1 < lines.length && isMarkdownTableSeparatorLine(lines[index + 1])) {
+      const tableStart = inlineTableStartIndex(line)
+      if (tableStart > 0) {
+        formatted.push(line.slice(0, tableStart).trimEnd(), '', line.slice(tableStart).trimStart())
+        continue
+      }
+    }
+
+    const headingStart = followingHeadingStartIndex(line)
+    if (headingStart > 0 && looksLikeMarkdownTableRow(line.slice(0, headingStart))) {
+      formatted.push(line.slice(0, headingStart).trimEnd(), '', line.slice(headingStart).trimStart())
+      continue
+    }
+
+    formatted.push(line)
+  }
+  return formatted.join('\n')
+}
+
+function inlineTableStartIndex(line: string): number {
+  let pipeIndex = line.indexOf('|')
+  while (pipeIndex >= 0) {
+    const prefix = line.slice(0, pipeIndex).trimEnd()
+    const tableRow = line.slice(pipeIndex).trimStart()
+    if (
+      looksLikeMarkdownTableRow(tableRow)
+      && (isMarkdownHeadingLine(prefix) || endsWithSentencePunctuation(prefix))
+    ) {
+      return pipeIndex
+    }
+    pipeIndex = line.indexOf('|', pipeIndex + 1)
+  }
+  return -1
+}
+
+function followingHeadingStartIndex(line: string): number {
+  let index = 0
+  while (index < line.length) {
+    if (isWhitespace(line[index])) {
+      const markerStart = skipWhitespace(line, index)
+      if (markdownHeadingMarkerLength(line, markerStart)) return markerStart
+      index = markerStart
+      continue
+    }
+    index += 1
+  }
+  return -1
+}
+
+function isMarkdownHeadingLine(value: string): boolean {
+  return markdownHeadingMarkerLength(value.trimStart(), 0) > 0
+}
+
+function markdownHeadingMarkerLength(value: string, start: number): number {
+  let count = 0
+  while (start + count < value.length && value[start + count] === '#' && count < 6) count += 1
+  if (!count || value[start + count] === '#') return 0
+  return isWhitespace(value[start + count]) ? count : 0
+}
+
+function isMarkdownTableSeparatorLine(line: string): boolean {
+  const value = line.trimStart()
+  if (!value.startsWith('|')) return false
+  let index = skipInlineWhitespace(value, 1)
+  let dashCount = 0
+  while (value[index] === '-') {
+    dashCount += 1
+    index += 1
+  }
+  return dashCount >= 3
+}
+
+function looksLikeMarkdownTableRow(value: string): boolean {
+  const clean = value.trim()
+  if (!clean.startsWith('|') || !clean.endsWith('|')) return false
+  let pipeCount = 0
+  for (const char of clean) {
+    if (char === '|') pipeCount += 1
+  }
+  return pipeCount >= 3
+}
+
+function endsWithSentencePunctuation(value: string): boolean {
+  const clean = value.trimEnd()
+  if (!clean) return false
+  return ['.', '!', '?'].includes(clean[clean.length - 1])
+}
+
+function skipWhitespace(value: string, start: number): number {
+  let index = start
+  while (index < value.length && isWhitespace(value[index])) index += 1
+  return index
+}
+
+function skipInlineWhitespace(value: string, start: number): number {
+  let index = start
+  while (index < value.length && isInlineWhitespace(value[index])) index += 1
+  return index
+}
+
+function isWhitespace(char: string | undefined): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f'
+}
+
+function isInlineWhitespace(char: string | undefined): boolean {
+  return char === ' ' || char === '\t'
 }
 
 function sourceLimitationLines(

@@ -1559,6 +1559,37 @@ describe('LLMWiki Chat', () => {
     expect(screen.getByRole('region', { name: 'Details' })).toHaveTextContent('Runtime evidence with a source ref anchor.')
   })
 
+  it('detects raw HTML citation anchors without tag-stripping sanitization', async () => {
+    const chat = await askCustomA2aAnswer(
+      'External runtime answer cites <a href="#citation-1"><span>1</span></a>.',
+      {
+        citations: [
+          {
+            id: 'local-demo:runtime-focus',
+            title: 'Runtime Focus',
+            path: 'runtime-focus.md',
+            snippet: 'Runtime evidence referenced through raw HTML anchor text.',
+            connectionId: 'local-demo',
+            sourceRefs: ['RUNTIME-SRC'],
+          },
+        ],
+        graph: {
+          nodes: [
+            { id: 'page:runtime-focus', label: 'Runtime Focus', kind: 'topic', path: 'runtime-focus.md' },
+            { id: 'source:RUNTIME-SRC', label: 'RUNTIME-SRC', kind: 'source_ref' },
+          ],
+          edges: [
+            { source: 'page:runtime-focus', target: 'source:RUNTIME-SRC', relation: 'cites' },
+          ],
+        },
+      },
+    )
+
+    const answerText = await within(chat).findByText(/External runtime answer cites/)
+    const assistantMessage = assistantMessageFor(answerText)
+    expect(assistantMessage).not.toHaveTextContent('Evidence was returned, but the answer body does not include inline citation anchors.')
+  })
+
   it('shows a quiet notice when returned evidence is not mapped to inline citation anchors', async () => {
     const chat = await askCustomA2aAnswer(
       'External runtime returned an uncited summary.',
@@ -1799,13 +1830,14 @@ describe('LLMWiki Chat', () => {
 
   it('renders flattened local-runtime source tables as GFM tables', async () => {
     const user = userEvent.setup()
+    const pipeHeavyPrefix = Array.from({ length: 80 }, (_, index) => `field_${index}`).join(' | ')
     stubFetch(() => Response.json({
       wiki_title: 'Sample Wiki',
       orientation: [
         {
           title: 'Data Quality',
           role: 'topic',
-          snippet: 'Any analysis should account for missing fields. | Field | Missing rows | | --- | --- | | species | 0 | | bill_length_mm | 2 |',
+          snippet: `Any analysis should account for missing fields in ${pipeHeavyPrefix}. | Field | Missing rows | | --- | --- | | species | 0 | | bill_length_mm | 2 |`,
         },
       ],
       evidence: [],
