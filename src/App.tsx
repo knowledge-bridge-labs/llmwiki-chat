@@ -2786,7 +2786,7 @@ function ConnectionList({
       bodyId="knowledge-sources-section-body"
       sectionRef={sectionRef}
     >
-      <p className="sidebar-section-guidance">Select one or more llmwiki-serve sources. New, selected, or edited endpoints are checked automatically.</p>
+      <p className="sidebar-section-guidance">Select direct or bridge-managed Knowledge Sources. New, selected, or edited direct endpoints are checked automatically.</p>
       <div className="connection-list">
         {connections.map((connection) => {
           const bridgeManaged = isBridgeManagedConnection(connection)

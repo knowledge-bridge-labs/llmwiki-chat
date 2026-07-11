@@ -159,6 +159,8 @@ The companion bridge:
 - serves `GET /.well-known/agent-card.json` with profile-specific A2A runtime
   metadata for `hermes`, `deepagents`, or `generic`
 - serves `POST /message:send` for the normal `llmwiki-chat` runtime request
+- exposes bridge-registered Knowledge Sources through MCP
+  `llmwiki_list_sources`
 - queries selected ready Knowledge Sources itself over `llmwiki-http`, MCP-style
   JSON-RPC, or A2A-style message protocols
 - calls the configured OpenAI-compatible `/chat/completions` runtime with the
@@ -193,10 +195,17 @@ runtime, and `generic` for any other OpenAI-compatible chat completions
 runtime. If the runtime requires provider authentication, keep
 `LLMWIKI_AGENT_BRIDGE_API_KEY` in the bridge process environment.
 
-Then open `llmwiki-chat`, choose the matching named runtime slot or `Custom A2A`,
-enter the bridge URL such as `http://127.0.0.1:8788`, click `Test runtime`, and
-ask normally after the runtime reports ready. Named slots become ready only when
+Then open `llmwiki-chat`, choose the matching named bridge slot or `Custom A2A`,
+enter the bridge URL such as `http://127.0.0.1:8788`, click `Test bridge`, and
+ask normally after the bridge reports ready. Named slots become ready only when
 the bridge agent card identity matches the selected slot.
+
+After a bridge is ready, chat calls the bridge MCP `llmwiki_list_sources` tool
+and renders the returned sources as bridge-managed, read-only Knowledge Source
+cards. Edit, remove, or register those sources from bridge settings. Use chat's
+direct source cards when you want to test or debug one `llmwiki-serve` endpoint
+without routing through a bridge. Bridge-managed sources are not saved as local
+chat direct-source configuration.
 
 The bridge owns server-side source access policy. Use
 `LLMWIKI_AGENT_BRIDGE_SOURCE_POLICY` to choose the outbound Knowledge Source URL
