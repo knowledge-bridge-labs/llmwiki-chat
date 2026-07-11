@@ -13,7 +13,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import { agentClientFor, discoverAgentRuntime, starterAgentConnections } from './agents'
+import { agentClientFor, discoverAgentRuntime, discoverBridgeKnowledgeSources, starterAgentConnections } from './agents'
 import { clientFor, diagnosticFromError } from './serveClient'
 import type {
   AgentConnection,
@@ -72,6 +72,7 @@ const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
 const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
 
 type RuntimeStatus = AgentConnection['status'] | 'running'
+type BridgeKnowledgeSourceSnapshot = Awaited<ReturnType<typeof discoverBridgeKnowledgeSources>>[number]
 
 interface PersistedConnectionConfig {
   id: string
@@ -257,9 +258,10 @@ function persistConnections(connections: Connection[]): void {
   if (typeof window === 'undefined') return
 
   try {
+    const persistedConnections = connections.filter((connection) => !isBridgeManagedConnection(connection))
     const payload = {
       version: 1,
-      connections: connections.map(toConnectionStorageConfig),
+      connections: persistedConnections.map(toConnectionStorageConfig),
     }
     window.localStorage.setItem(knowledgeSourceStorageKey, JSON.stringify(payload))
   } catch {
@@ -472,9 +474,14 @@ function isStarterConnection(connection: Connection): boolean {
   return starterConnections.some((starter) => starter.id === connection.id)
 }
 
+function isBridgeManagedConnection(connection: Connection): boolean {
+  return connection.sourceOrigin === 'bridge' || Boolean(connection.bridgeSource)
+}
+
 function resetOrRemoveConnection(connections: Connection[], connectionId: string): Connection[] {
   const connection = connections.find((item) => item.id === connectionId)
   if (!connection) return connections
+  if (isBridgeManagedConnection(connection)) return connections.filter((item) => item.id !== connectionId)
   const starter = starterConnections.find((item) => item.id === connection.id)
   if (!starter) return connections.filter((item) => item.id !== connectionId)
   return connections.map((item) => (
@@ -720,6 +727,18 @@ export default function App() {
             : item,
         ),
       )
+      if (isBridgeAgent(next)) {
+        try {
+          const bridgeSources = await discoverBridgeKnowledgeSources(next, request.controller.signal)
+          setConnections((items) => (
+            canApplyRuntimeDiscovery(next, request, runtimeDiscoveryRequests.current)
+              ? mergeBridgeManagedSources(items, next, bridgeSources)
+              : items
+          ))
+        } catch {
+          if (request.controller.signal.aborted) return
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const diagnostic = diagnosticFromError(error)
@@ -1592,6 +1611,83 @@ function mergeDiscoveredAgent(current: AgentConnection, discovered: AgentConnect
     bearerToken: current.bearerToken,
     diagnostic: discovered.diagnostic,
   }
+}
+
+function mergeBridgeManagedSources(
+  current: Connection[],
+  agent: AgentConnection,
+  bridgeSources: BridgeKnowledgeSourceSnapshot[],
+): Connection[] {
+  const currentById = new Map(current.map((connection) => [connection.id, connection]))
+  const directConnectionKeys = new Set(
+    current
+      .filter((connection) => !isBridgeManagedConnection(connection))
+      .map(connectionEndpointKey),
+  )
+  const nextBridgeIds = new Set(
+    bridgeSources.map((source) => bridgeManagedConnectionId(agent, source)),
+  )
+  const keptConnections = current.filter((connection) => (
+    !isBridgeManagedConnection(connection)
+    || connection.bridgeSource?.agentId !== agent.id
+    || nextBridgeIds.has(connection.id)
+  ))
+  const bridgeConnections = bridgeSources
+    .filter((source) => !directConnectionKeys.has(sourceEndpointKey(source.protocol, source.url)))
+    .map((source): Connection => {
+      const id = bridgeManagedConnectionId(agent, source)
+      const existing = currentById.get(id)
+      return {
+        id,
+        name: source.name,
+        protocol: source.protocol,
+        url: source.url,
+        selected: existing?.selected ?? source.selected,
+        status: source.status === 'unknown' ? 'ready' : source.status,
+        sourceOrigin: 'bridge',
+        bridgeSource: {
+          agentId: agent.id,
+          agentName: agent.name,
+          sourceId: source.id,
+        },
+        readOnly: true,
+        description: source.description,
+        adapter: source.adapter,
+        implementation: source.implementation,
+        capabilities: source.capabilities,
+        error: '',
+        diagnostic: undefined,
+      }
+    })
+
+  const directConnections = keptConnections
+    .filter((connection) => !nextBridgeIds.has(connection.id))
+    .map((connection) => (
+      bridgeConnections.length && shouldDeselectDefaultStarterForBridge(connection)
+        ? { ...connection, selected: false }
+        : connection
+    ))
+
+  return [...directConnections, ...bridgeConnections]
+}
+
+function bridgeManagedConnectionId(agent: AgentConnection, source: BridgeKnowledgeSourceSnapshot): string {
+  return `bridge:${agent.id}:${source.id}`
+}
+
+function connectionEndpointKey(connection: Pick<Connection, 'protocol' | 'url'>): string {
+  return sourceEndpointKey(connection.protocol, connection.url)
+}
+
+function sourceEndpointKey(protocol: Protocol, url: string): string {
+  return `${protocol}:${url.trim().replace(/\/+$/, '').toLowerCase()}`
+}
+
+function shouldDeselectDefaultStarterForBridge(connection: Connection): boolean {
+  return connection.id === 'local-demo'
+    && !connection.nameOverride
+    && connection.url === defaultServeUrl()
+    && connection.status !== 'ready'
 }
 
 function resetAgentRuntime(agents: AgentConnection[], agentId: string): AgentConnection[] {
@@ -2692,8 +2788,10 @@ function ConnectionList({
     >
       <p className="sidebar-section-guidance">Select one or more llmwiki-serve sources. New, selected, or edited endpoints are checked automatically.</p>
       <div className="connection-list">
-        {connections.map((connection) => (
-          <article className="connection-card" key={connection.id}>
+        {connections.map((connection) => {
+          const bridgeManaged = isBridgeManagedConnection(connection)
+          return (
+          <article className={`connection-card ${bridgeManaged ? 'bridge-managed-source' : ''}`} key={connection.id}>
             <div className="connection-title">
               <label>
                 <input
@@ -2704,6 +2802,9 @@ function ConnectionList({
                 <span>{connection.name}</span>
               </label>
               <div className="connection-state">
+                <span className={`origin-chip ${bridgeManaged ? 'bridge' : 'direct'}`}>
+                  {bridgeManaged ? 'Bridge source' : 'Direct source'}
+                </span>
                 <span
                   className={`selection-chip ${connection.selected ? 'selected' : 'not-selected'}`}
                   aria-label={`Source selection ${connection.selected ? 'selected' : 'not selected'}`}
@@ -2718,7 +2819,7 @@ function ConnectionList({
                   type="button"
                   onClick={() => resetConnection(connection)}
                 >
-                  {isStarterConnection(connection) ? 'Reset source' : 'Remove source'}
+                  {bridgeManaged ? 'Hide source' : isStarterConnection(connection) ? 'Reset source' : 'Remove source'}
                 </button>
               </div>
             </div>
@@ -2727,14 +2828,15 @@ function ConnectionList({
               {sourceTestCopy(connection)}
             </p>
             <details className="source-setup-disclosure" open={connection.status !== 'ready' ? true : undefined}>
-              <summary>Source setup</summary>
+              <summary>{bridgeManaged ? 'Source details' : 'Source setup'}</summary>
               <div className="source-setup-body">
                 <input
                   value={connection.name}
                   aria-label="Source display label"
                   placeholder="Source display label"
+                  readOnly={bridgeManaged}
                   onChange={(event) =>
-                    onChange(connections.map((item) => (
+                    !bridgeManaged && onChange(connections.map((item) => (
                       item.id === connection.id
                         ? { ...item, name: event.target.value, nameOverride: true }
                         : item
@@ -2744,9 +2846,12 @@ function ConnectionList({
                 <input
                   value={connection.url}
                   aria-label={`${connection.name} URL`}
-                  onChange={(event) => updateConnectionUrl(connection, event.target.value)}
+                  readOnly={bridgeManaged}
+                  onChange={(event) => {
+                    if (!bridgeManaged) updateConnectionUrl(connection, event.target.value)
+                  }}
                   onBlur={(event) => {
-                    commitConnectionUrl(connection, event.currentTarget.value)
+                    if (!bridgeManaged) commitConnectionUrl(connection, event.currentTarget.value)
                   }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
@@ -2758,14 +2863,18 @@ function ConnectionList({
                 {connection.error ? <p className="error">{connection.error}</p> : null}
                 <DiagnosticDetails diagnostic={connection.diagnostic} label="Source diagnostic" openByDefault={connection.status === 'error'} />
                 <div className="connection-actions">
-                  <button
-                    type="button"
-                    data-manual-connection-test="true"
-                    onClick={() => onDiscover(connection)}
-                    disabled={connection.status === 'checking'}
-                  >
-                    {connection.status === 'checking' ? 'Testing source...' : 'Test source'}
-                  </button>
+                  {bridgeManaged ? (
+                    <span className="managed-source-note">Managed by {connection.bridgeSource?.agentName || 'Agent Bridge'}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      data-manual-connection-test="true"
+                      onClick={() => onDiscover(connection)}
+                      disabled={connection.status === 'checking'}
+                    >
+                      {connection.status === 'checking' ? 'Testing source...' : 'Test source'}
+                    </button>
+                  )}
                   <button
                     className="secondary-action"
                     type="button"
@@ -2777,7 +2886,7 @@ function ConnectionList({
               </div>
             </details>
           </article>
-        ))}
+        )})}
       </div>
       <details
         className="add-connection"
@@ -2871,6 +2980,7 @@ function ConnectionManifestMeta({ connection }: { connection: Connection }) {
 
 function connectionManifestMetaItems(connection: Connection): Array<[string, string]> {
   return [
+    connection.bridgeSource ? ['Bridge', `${connection.bridgeSource.agentName} · ${connection.bridgeSource.sourceId}`] : null,
     connection.adapter ? ['Adapter', connection.adapter] : null,
     connection.implementation ? ['Implementation', connection.implementation] : null,
     typeof connection.pageCount === 'number' ? ['Pages', `${connection.approvedPageCount ?? 0}/${connection.pageCount} approved`] : null,
@@ -4292,7 +4402,10 @@ function externalRuntimeSourceUrlAdvisoryFor(
   readyConnections: Connection[],
 ): string {
   if (agent.protocol === 'mock-agent') return ''
-  if (readyConnections.some((connection) => !isReachablePublicHttpsSourceUrl(connection.url))) {
+  if (readyConnections.some((connection) => {
+    const managedBySelectedBridge = isBridgeAgent(agent) && connection.bridgeSource?.agentId === agent.id
+    return !managedBySelectedBridge && !isReachablePublicHttpsSourceUrl(connection.url)
+  })) {
     return externalRuntimeSourceUrlAdvisoryMessage
   }
   return ''
@@ -4375,6 +4488,9 @@ function sourceSelectionTone(connections: Connection[]): string {
 }
 
 function sourceTestCopy(connection: Connection): string {
+  if (isBridgeManagedConnection(connection) && connection.status === 'ready') {
+    return `Registered by ${connection.bridgeSource?.agentName || 'Agent Bridge'} and ready for bridge calls.`
+  }
   if (connection.status === 'checking') return 'Checking source connection...'
   if (connection.status === 'ready') {
     return 'Source tested successfully.'

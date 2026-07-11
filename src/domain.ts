@@ -44,6 +44,12 @@ export interface AgentBridgeMetadata {
   local?: boolean
 }
 
+export interface BridgeSourceRegistration {
+  agentId: string
+  agentName: string
+  sourceId: string
+}
+
 export interface Connection {
   id: string
   name: string
@@ -62,6 +68,9 @@ export interface Connection {
   latencyMs?: number
   error?: string
   diagnostic?: Diagnostic
+  sourceOrigin?: 'direct' | 'bridge'
+  bridgeSource?: BridgeSourceRegistration
+  readOnly?: boolean
 }
 
 export interface Citation {

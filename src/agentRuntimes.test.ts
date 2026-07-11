@@ -3,6 +3,7 @@ import {
   BridgeMcpAgentRuntimeClient,
   ExternalA2aAgentRuntimeClient,
   agentClientFor,
+  discoverBridgeKnowledgeSources,
   discoverAgentRuntime,
   starterAgentConnections,
 } from './agentRuntimes'
@@ -133,6 +134,60 @@ describe('BridgeMcpAgentRuntimeClient', () => {
       error: '',
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists bridge registered Knowledge Sources through llmwiki_list_sources', async () => {
+    const requestBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('http://127.0.0.1:8788/mcp')
+      const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+      requestBodies.push(body)
+      return Response.json({
+        jsonrpc: '2.0',
+        id: body.id,
+        result: {
+          structuredContent: {
+            llmwiki_sources: {
+              sources: [
+                {
+                  id: 'project-wiki',
+                  name: 'Project Wiki',
+                  protocol: 'llmwiki-http',
+                  url: 'http://127.0.0.1:19870',
+                  status: 'ready',
+                  selected: true,
+                  capabilities: ['llmwiki_context'],
+                },
+              ],
+              readySourceCount: 1,
+            },
+          },
+        },
+      })
+    }))
+
+    const sources = await discoverBridgeKnowledgeSources(bridgeMcpRuntime)
+
+    expect(requestBodies).toHaveLength(1)
+    expect(requestBodies[0]).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'llmwiki_list_sources',
+        arguments: {},
+      },
+    })
+    expect(sources).toEqual([
+      expect.objectContaining({
+        id: 'project-wiki',
+        name: 'Project Wiki',
+        protocol: 'llmwiki-http',
+        url: 'http://127.0.0.1:19870',
+        status: 'ready',
+        selected: true,
+        capabilities: ['llmwiki_context'],
+      }),
+    ])
   })
 
   it('runs llmwiki_agent_run through MCP tools/call with selected ready sources', async () => {
