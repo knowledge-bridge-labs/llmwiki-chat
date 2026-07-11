@@ -1,6 +1,7 @@
 export {
   agentClientFor,
   agentRuntimeRegistry,
+  discoverBridgeKnowledgeSources,
   discoverAgentRuntime,
   starterAgentConnections,
   BridgeMcpAgentRuntimeClient,

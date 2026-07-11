@@ -356,6 +356,11 @@ dd,
   padding: 9px;
 }
 
+.connection-card.bridge-managed-source {
+  border-color: #bfd6f6;
+  background: #fbfdff;
+}
+
 .agent-runtime-card {
   background: #ffffff;
   padding: 6px;
@@ -1157,6 +1162,31 @@ button:disabled {
 .selection-chip.not-selected {
   background: #f4f4f5;
   color: #71717a;
+}
+
+.origin-chip {
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.origin-chip.direct {
+  background: #eef2f7;
+  color: #526073;
+}
+
+.origin-chip.bridge {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.managed-source-note {
+  align-self: center;
+  color: #526073;
+  font-size: 12px;
+  font-weight: 680;
 }
 
 .answer-run-details {

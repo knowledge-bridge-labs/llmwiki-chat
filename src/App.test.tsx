@@ -583,6 +583,55 @@ describe('LLMWiki Chat', () => {
     })
   })
 
+  it('shows Agent Bridge registered sources in Knowledge Sources without persisting them as direct sources', async () => {
+    const fetchMock = stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-wiki',
+                    name: 'Bridge Wiki',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:19870',
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 1,
+              },
+            },
+          },
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    const bridgeSource = await screen.findByRole('checkbox', { name: 'Bridge Wiki' })
+    expect(bridgeSource).toBeChecked()
+    const sourceCard = bridgeSource.closest('article')
+    expect(sourceCard).toBeTruthy()
+    expect(within(sourceCard as HTMLElement).getByText('Bridge source')).toBeInTheDocument()
+    expect(within(sourceCard as HTMLElement).getByText('Managed by Local Agent Bridge (A2A)')).toBeInTheDocument()
+    expect(within(sourceCard as HTMLElement).queryByRole('button', { name: 'Test source' })).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8788/mcp',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
+    await waitFor(() => {
+      expect(readStoredConnections().connections.some((connection) => connection.name === 'Bridge Wiki')).toBe(false)
+    })
+  })
+
   it('shows bridge settings for Hermes when the discovered runtime is an Agent Bridge profile', async () => {
     const user = userEvent.setup()
     stubFetch(() => Response.json(queryPayload()), async (url) => {

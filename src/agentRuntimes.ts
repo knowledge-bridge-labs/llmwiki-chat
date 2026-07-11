@@ -15,6 +15,7 @@ import type {
   Diagnostic,
   KnowledgeGraph,
   KnowledgeQueryResult,
+  Protocol,
 } from './domain'
 import { emptyGraph, mergeGraphs, namespaceGraph } from './graph'
 import { agentRuntimeUrlPolicyMessage, isAllowedAgentRuntimeUrl } from './urlPolicy'
@@ -78,6 +79,19 @@ export interface AgentRuntimeEndpoint {
   card: Record<string, unknown>
   cardUrl: string
   messageUrl: string
+}
+
+export interface BridgeKnowledgeSource {
+  id: string
+  name: string
+  description?: string
+  protocol: Protocol
+  url: string
+  selected: boolean
+  status: Connection['status']
+  capabilities?: string[]
+  adapter?: string
+  implementation?: string
 }
 
 export const agentRuntimeRegistry: AgentRuntimeDefinition[] = [
@@ -202,6 +216,24 @@ export async function discoverAgentRuntime(agent: AgentConnection, signal?: Abor
     error: '',
     diagnostic: undefined,
   }
+}
+
+export async function discoverBridgeKnowledgeSources(
+  agent: AgentConnection,
+  signal?: AbortSignal,
+): Promise<BridgeKnowledgeSource[]> {
+  const result = await callBridgeMcpMethod(
+    agent,
+    'tools/call',
+    {
+      name: 'llmwiki_list_sources',
+      arguments: {},
+    },
+    signal,
+    `${agent.name} llmwiki_list_sources`,
+    BRIDGE_MCP_DISCOVERY_TIMEOUT_MS,
+  )
+  return normalizeBridgeKnowledgeSources(result)
 }
 
 async function discoverBridgeMcpAgentRuntime(
@@ -1489,6 +1521,51 @@ function mcpSettingsUrl(result: Record<string, unknown>, configuredUrl: string):
     ? readString(serverInfo, 'settingsUrl') || readString(serverInfo, 'settings_url')
     : ''
   return resolveHttpUrl(direct || nested, configuredUrl)
+}
+
+function normalizeBridgeKnowledgeSources(result: Record<string, unknown>): BridgeKnowledgeSource[] {
+  const structured = asRecord(result.structuredContent ?? result.structured_content)
+  const nested = asRecord(structured?.llmwiki_sources)
+    || asRecord(structured?.knowledgeSources)
+    || asRecord(structured?.knowledge_sources)
+    || asRecord(result.llmwiki_sources)
+    || asRecord(result.knowledgeSources)
+    || asRecord(result.knowledge_sources)
+    || result
+  return readRecordArray(nested.sources)
+    .map(normalizeBridgeKnowledgeSource)
+    .filter((source): source is BridgeKnowledgeSource => Boolean(source))
+}
+
+function normalizeBridgeKnowledgeSource(source: Record<string, unknown>): BridgeKnowledgeSource | null {
+  const protocol = readString(source, 'protocol')
+  if (!isKnowledgeSourceProtocol(protocol)) return null
+  const url = readString(source, 'url')
+  if (!url.trim()) return null
+  const id = readString(source, 'id') || readString(source, 'sourceId') || readString(source, 'source_id') || url
+  const name = readString(source, 'name') || readString(source, 'title') || id
+  return {
+    id,
+    name,
+    description: readString(source, 'description'),
+    protocol,
+    url,
+    selected: source.selected !== false,
+    status: normalizeConnectionStatus(readString(source, 'status')),
+    capabilities: readStringArray(source.capabilities),
+    adapter: readString(source, 'adapter'),
+    implementation: readString(source, 'implementation'),
+  }
+}
+
+function isKnowledgeSourceProtocol(value: string): value is Protocol {
+  return value === 'llmwiki-http' || value === 'mcp' || value === 'a2a'
+}
+
+function normalizeConnectionStatus(value: string): Connection['status'] {
+  const clean = value.toLowerCase()
+  if (clean === 'ready' || clean === 'checking' || clean === 'error') return clean
+  return 'unknown'
 }
 
 function bridgeMcpEndpointUrl(url: string): string {

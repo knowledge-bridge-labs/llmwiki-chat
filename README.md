@@ -87,12 +87,16 @@ Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 4. Prefer the default Local Agent Bridge A2A or MCP path when
    `llmwiki-agent-bridge` is running at `http://127.0.0.1:8788`; confirm the
    bridge URL and click `Test bridge`.
-5. If no bridge is running, switch to `Local Development Runtime` under
+5. When the bridge is ready, chat discovers the bridge's registered Knowledge
+   Sources and shows them as bridge-managed, read-only source cards. Edit those
+   sources in the bridge settings page. Keep direct source cards in chat for
+   standalone `llmwiki-serve` testing and debugging.
+6. If no bridge is running, switch to `Local Development Runtime` under
    testing/developer runtime options for deterministic UI, trace, citation, and
    graph rendering checks. It is not an answer-quality runtime.
-6. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
+7. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
-7. Review the answer, citations, artifacts, and trace before treating the result
+8. Review the answer, citations, artifacts, and trace before treating the result
    as useful.
 
 The Vite command starts only the browser client. It does not start
@@ -184,7 +188,7 @@ runtime bearer token in the `llmwiki-chat` runtime setup panel.
 
 | Need | Use `llmwiki-chat` for | Use something else for |
 | --- | --- | --- |
-| Source setup | Add and test HTTP and MCP-style JSON-RPC Knowledge Source endpoints; treat A2A-style source endpoints as advanced/non-default until the picker supports them. | Compiling, crawling, embedding, or hosting wiki content. |
+| Source setup | Add and test direct HTTP and MCP-style JSON-RPC Knowledge Source endpoints, or inspect bridge-managed source cards discovered from a ready Agent Bridge. Treat A2A-style source endpoints as advanced/non-default until the picker supports them. | Compiling, crawling, embedding, hosting wiki content, or editing bridge-owned source registration. |
 | Source inspection | Browse pages, graph context, source refs, and citation targets before asking. | Long-term knowledge management or source authoring. |
 | Runtime selection | Choose `Local Development Runtime`, `Custom A2A`, or a named A2A runtime slot. | Running the model stack, planner, tools, or production runtime service. |
 | Answer review | Inspect citations, artifacts, and trace steps behind a runtime response. | Judging production answer quality without a real external runtime. |
@@ -240,9 +244,11 @@ the separate `llmwiki-agent-bridge` checkout or npm package.
    validate the LLMWiki knowledge-source flow. A2A-style source adapters remain
    advanced/non-default until the Add source picker supports them.
 2. External Agent Runtime console: connect an externally managed Agent Runtime
-   through an Agent Runtime adapter. Separately connect LLMWiki-compatible
-   Knowledge Source endpoints, then use `llmwiki-chat` as the console for source
-   selection, traces, citations, and graph context.
+   through an Agent Runtime adapter. If that runtime is
+   `llmwiki-agent-bridge`, chat discovers the bridge's registered Knowledge
+   Sources after the bridge is ready and shows them as bridge-managed,
+   read-only source cards. Direct source cards remain available for standalone
+   `llmwiki-serve` testing.
 
 Do not treat the mock adapter as the production answer-quality standard. Real
 answer quality belongs to the external runtime and model stack connected through
