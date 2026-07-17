@@ -582,21 +582,31 @@ export default function App() {
     activeRunController.current?.abort()
   }, [])
 
+  const abortActiveRunForScopeChange = useCallback((nextAgents: AgentConnection[], nextConnections: Connection[]) => {
+    if (!activeRunController.current) return
+    if (runScopeKey(agents, connections) !== runScopeKey(nextAgents, nextConnections)) {
+      abortActiveRun()
+    }
+  }, [abortActiveRun, agents, connections])
+
   const updateAgents = useCallback((nextAgents: AgentConnection[]) => {
-    abortActiveRun()
+    const nextSelectedAgent = selectedAgentFromList(nextAgents)
+    const nextConnections = connectionsForSelectedAgent(connections, nextSelectedAgent)
+    abortActiveRunForScopeChange(nextAgents, nextConnections)
     setAgents((current) => {
       invalidateChangedRuntimeRequests(current, nextAgents, runtimeDiscoveryRequests.current)
       return nextAgents
     })
-  }, [abortActiveRun])
+    setConnections((current) => connectionsForSelectedAgent(current, nextSelectedAgent))
+  }, [abortActiveRunForScopeChange, connections])
 
   const updateConnections = useCallback((nextConnections: Connection[]) => {
-    abortActiveRun()
+    abortActiveRunForScopeChange(agents, nextConnections)
     setConnections((current) => {
       invalidateChangedSourceRequests(current, nextConnections, sourceDiscoveryRequests.current)
       return nextConnections
     })
-  }, [abortActiveRun])
+  }, [abortActiveRunForScopeChange, agents])
 
   const selectedAgent = useMemo(() => agents.find((item) => item.selected) || agents[0], [agents])
   const selectedConnections = useMemo(() => connections.filter((item) => item.selected), [connections])
@@ -1619,24 +1629,34 @@ function mergeBridgeManagedSources(
   bridgeSources: BridgeKnowledgeSourceSnapshot[],
 ): Connection[] {
   const currentById = new Map(current.map((connection) => [connection.id, connection]))
-  const directConnectionKeys = new Set(
+  const bridgeConnectionByEndpoint = new Map(
     current
-      .filter((connection) => !isBridgeManagedConnection(connection))
-      .map(connectionEndpointKey),
+      .filter(isBridgeManagedConnection)
+      .map((connection) => [connectionEndpointKey(connection), connection]),
   )
   const nextBridgeIds = new Set(
     bridgeSources.map((source) => bridgeManagedConnectionId(agent, source)),
   )
+  const nextBridgeEndpointKeys = new Set(
+    bridgeSources.map((source) => sourceEndpointKey(source.protocol, source.url)),
+  )
+  const selectedReadyBridgeEndpointKeys = new Set(
+    bridgeSources
+      .filter((source) => source.selected && (source.status === 'ready' || source.status === 'unknown'))
+      .map((source) => sourceEndpointKey(source.protocol, source.url)),
+  )
   const keptConnections = current.filter((connection) => (
     !isBridgeManagedConnection(connection)
-    || connection.bridgeSource?.agentId !== agent.id
+    || (
+      connection.bridgeSource?.agentId !== agent.id
+      && !nextBridgeEndpointKeys.has(connectionEndpointKey(connection))
+    )
     || nextBridgeIds.has(connection.id)
   ))
   const bridgeConnections = bridgeSources
-    .filter((source) => !directConnectionKeys.has(sourceEndpointKey(source.protocol, source.url)))
     .map((source): Connection => {
       const id = bridgeManagedConnectionId(agent, source)
-      const existing = currentById.get(id)
+      const existing = currentById.get(id) || bridgeConnectionByEndpoint.get(sourceEndpointKey(source.protocol, source.url))
       return {
         id,
         name: source.name,
@@ -1663,12 +1683,46 @@ function mergeBridgeManagedSources(
   const directConnections = keptConnections
     .filter((connection) => !nextBridgeIds.has(connection.id))
     .map((connection) => (
-      bridgeConnections.length && shouldDeselectDefaultStarterForBridge(connection)
+      bridgeConnections.length && (
+        shouldDeselectDefaultStarterForBridge(connection)
+        || shouldDeselectDirectDuplicateForBridge(connection, selectedReadyBridgeEndpointKeys)
+      )
         ? { ...connection, selected: false }
         : connection
     ))
 
   return [...directConnections, ...bridgeConnections]
+}
+
+function selectedAgentFromList(agents: AgentConnection[]): AgentConnection | undefined {
+  return agents.find((agent) => agent.selected) || agents[0]
+}
+
+function connectionsForSelectedAgent(connections: Connection[], agent: AgentConnection | undefined): Connection[] {
+  if (agent && isBridgeAgent(agent)) return connections
+  let changed = false
+  const nextConnections = connections.map((connection) => {
+    if (!isBridgeManagedConnection(connection) || !connection.selected) return connection
+    changed = true
+    return { ...connection, selected: false }
+  })
+  return changed ? nextConnections : connections
+}
+
+function runScopeKey(agents: AgentConnection[], connections: Connection[]): string {
+  const agent = selectedAgentFromList(agents)
+  const runtimeKey = agent
+    ? ['runtime', agent.id, agent.protocol, scopeUrlKey(agent.url || ''), agent.bearerToken || ''].join('\u0001')
+    : 'runtime'
+  const sourceKeys = connections
+    .filter((connection) => connection.selected)
+    .map((connection) => ['source', connection.id, connection.protocol, scopeUrlKey(connection.url)].join('\u0001'))
+    .sort()
+  return [runtimeKey, ...sourceKeys].join('\u0002')
+}
+
+function scopeUrlKey(url: string): string {
+  return url.trim().replace(/\/+$/, '')
 }
 
 function bridgeManagedConnectionId(agent: AgentConnection, source: BridgeKnowledgeSourceSnapshot): string {
@@ -1688,6 +1742,15 @@ function shouldDeselectDefaultStarterForBridge(connection: Connection): boolean 
     && !connection.nameOverride
     && connection.url === defaultServeUrl()
     && connection.status !== 'ready'
+}
+
+function shouldDeselectDirectDuplicateForBridge(
+  connection: Connection,
+  selectedReadyBridgeEndpointKeys: Set<string>,
+): boolean {
+  return !isBridgeManagedConnection(connection)
+    && connection.selected
+    && selectedReadyBridgeEndpointKeys.has(connectionEndpointKey(connection))
 }
 
 function resetAgentRuntime(agents: AgentConnection[], agentId: string): AgentConnection[] {
@@ -2249,7 +2312,6 @@ function AgentRuntimeList({
     ? `${selectedAgent.id}:${selectedAgent.protocol}:${selectedAgent.url || ''}:${selectedAgent.settingsUrl || ''}`
     : ''
   const sectionOpen = sectionState.open
-    && !(selectedAgentReady && sectionState.completionKey !== agentCompletionKey)
   const agentSectionTone = selectedAgent?.status === 'ready'
     ? 'ready'
     : selectedAgent?.status === 'checking'
@@ -2701,8 +2763,16 @@ function ConnectionList({
   const selectedSourcesReady = selectedConnections.length > 0
     && readySelectedConnections.length === selectedConnections.length
   const sourceCompletionKey = selectedSourcesReady ? selectedSourceKey : ''
+  const previousSelectedSourcesReady = useRef(selectedSourcesReady)
   const sectionOpen = sectionState.open
-    && !(selectedSourcesReady && sectionState.completionKey !== sourceCompletionKey)
+  useEffect(() => {
+    const becameReady = selectedSourcesReady && !previousSelectedSourcesReady.current
+    previousSelectedSourcesReady.current = selectedSourcesReady
+    if (!becameReady) return
+    setSectionState((current) => (
+      current.open ? { open: false, completionKey: sourceCompletionKey } : current
+    ))
+  }, [selectedSourcesReady, sourceCompletionKey])
   const selectedSourcesChecking = selectedConnections.some((connection) => connection.status === 'checking')
   const selectedSourcesErrored = selectedConnections.some((connection) => connection.status === 'error')
   const sourceSectionTone = selectedSourcesReady
@@ -2758,7 +2828,7 @@ function ConnectionList({
 
   function updateConnectionUrl(connection: Connection, url: string) {
     onChange(connections.map((item) => (
-      item.id === connection.id ? { ...item, ...connectionUrlUpdate(url) } : item
+      item.id === connection.id ? { ...item, ...connectionUrlUpdate(url), selected: true } : item
     )))
   }
 

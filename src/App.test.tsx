@@ -114,10 +114,12 @@ function stubFetch(
 
 function deferredResponse() {
   let resolve: (response: Response) => void = () => {}
-  const promise = new Promise<Response>((next) => {
+  let reject: (error: unknown) => void = () => {}
+  const promise = new Promise<Response>((next, fail) => {
     resolve = next
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function a2aAgentResultResponse(
@@ -630,6 +632,336 @@ describe('LLMWiki Chat', () => {
     await waitFor(() => {
       expect(readStoredConnections().connections.some((connection) => connection.name === 'Bridge Wiki')).toBe(false)
     })
+  })
+
+  it('uses a bridge-managed source when it duplicates an unavailable default direct endpoint', async () => {
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8765/manifest') {
+        return new Response('not found', { status: 404 })
+      }
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-sample',
+                    name: 'Bridge Sample',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:8765',
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 1,
+              },
+            },
+          },
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    const bridgeSource = await screen.findByRole('checkbox', { name: 'Bridge Sample' })
+    expect(bridgeSource).toBeChecked()
+    const summary = screen.getByRole('group', { name: 'Active knowledge source summary' })
+    await waitFor(() => {
+      expect(within(summary).getAllByText('Bridge Sample').length).toBeGreaterThan(0)
+      expect(within(summary).getByText('1 selected · 1 ready available')).toBeInTheDocument()
+      expect(within(summary).getByText('Selected sources tested successfully.')).toBeInTheDocument()
+    })
+
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const directSource = within(sources).getByRole('checkbox', { name: 'Local sample LLMWiki' })
+    expect(directSource).not.toBeChecked()
+    const bridgeCard = bridgeSource.closest('article')
+    expect(bridgeCard).toBeTruthy()
+    expect(within(bridgeCard as HTMLElement).getByText('Bridge source')).toBeInTheDocument()
+    expect(within(bridgeCard as HTMLElement).getByText('Managed by Local Agent Bridge (A2A)')).toBeInTheDocument()
+  })
+
+  it('drops bridge-managed source selection after users edit a direct source for a custom runtime', async () => {
+    const user = userEvent.setup()
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-sample',
+                    name: 'Bridge Sample',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:8765',
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 1,
+              },
+            },
+          },
+        })
+      }
+      if (url === `${customA2aRuntimeUrl}/.well-known/agent-card.json`) {
+        return Response.json({
+          name: 'External Runtime',
+          description: 'Runtime card',
+          url: '/message:send',
+          capabilities: { streaming: false },
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole('checkbox', { name: 'Bridge Sample' })).toBeChecked()
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const directSource = await within(sources).findByRole('checkbox', { name: 'Sample Wiki' })
+    expect(directSource).not.toBeChecked()
+    const directCard = directSource.closest('article')
+    expect(directCard).toBeTruthy()
+    await openSourceSetup(user, directCard as HTMLElement)
+    await user.clear(within(directCard as HTMLElement).getByLabelText('Sample Wiki URL'))
+    await user.type(within(directCard as HTMLElement).getByLabelText('Sample Wiki URL'), publicSourceUrl)
+    await user.click(within(directCard as HTMLElement).getByRole('button', { name: 'Test source' }))
+    expect(await within(directCard as HTMLElement).findByLabelText('Connection status ready')).toBeInTheDocument()
+    expect(within(sources).getByRole('checkbox', { name: 'Sample Wiki' })).toBeChecked()
+
+    const runtimeCard = await addRuntime(user, 'Custom A2A')
+    await openRuntimeSetup(user, runtimeCard as HTMLElement)
+    await user.clear(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'))
+    await user.type(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'), customA2aRuntimeUrl)
+    await user.click(within(runtimeCard as HTMLElement).getByRole('button', { name: 'Test runtime' }))
+    expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
+
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Sample' })).not.toBeChecked()
+    expect(within(sources).getByRole('checkbox', { name: 'Sample Wiki' })).toBeChecked()
+    const summary = screen.getByRole('group', { name: 'Active knowledge source summary' })
+    expect(within(summary).getAllByText('Sample Wiki').length).toBeGreaterThan(0)
+    expect(within(summary).getByText('1 selected · 1 ready available')).toBeInTheDocument()
+  })
+
+  it('keeps a bridge run alive through no-op source selection and duplicate discovery refreshes', async () => {
+    const user = userEvent.setup()
+    const messageSend = deferredResponse()
+    let messageSendCalls = 0
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-sample',
+                    name: 'Bridge Sample',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:8765',
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 1,
+              },
+            },
+          },
+        })
+      }
+      if (url === 'http://127.0.0.1:8788/message:send') {
+        messageSendCalls += 1
+        const signal = init?.signal as AbortSignal | undefined
+        signal?.addEventListener('abort', () => {
+          messageSend.reject(new DOMException('The operation was aborted.', 'AbortError'))
+        }, { once: true })
+        return messageSend.promise
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    const bridgeSource = await screen.findByRole('checkbox', { name: 'Bridge Sample' })
+    expect(bridgeSource).toBeChecked()
+    await user.type(screen.getByLabelText('Question'), 'What is in this wiki?')
+    await user.click(screen.getByRole('button', { name: 'Ask Bridge Sample' }))
+    await waitFor(() => {
+      expect(messageSendCalls).toBe(1)
+    })
+
+    const bridgeSourceCard = bridgeSource.closest('article')
+    expect(bridgeSourceCard).toBeTruthy()
+    await user.click(within(bridgeSourceCard as HTMLElement).getByRole('button', { name: 'Use only this source' }))
+
+    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
+    const bridgeCard = within(agentBridge).getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }).closest('article')
+    expect(bridgeCard).toBeTruthy()
+    await openRuntimeSetup(user, bridgeCard as HTMLElement)
+    await user.click(within(bridgeCard as HTMLElement).getByRole('button', { name: 'Test bridge' }))
+
+    messageSend.resolve(a2aAgentResultResponse('Bridge completed after refresh.'))
+
+    const chat = screen.getByRole('region', { name: 'Chat' })
+    expect(await within(chat).findByText('Bridge completed after refresh.')).toBeInTheDocument()
+    expect(within(chat).queryByText(/Canceled because the selected scope changed/)).not.toBeInTheDocument()
+    expect(messageSendCalls).toBe(1)
+  })
+
+  it('keeps the ready Knowledge Sources section open while users change selected sources', async () => {
+    const user = userEvent.setup()
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-alpha',
+                    name: 'Bridge Alpha',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:19871',
+                    status: 'ready',
+                    selected: true,
+                  },
+                  {
+                    id: 'bridge-beta',
+                    name: 'Bridge Beta',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:19872',
+                    status: 'ready',
+                    selected: true,
+                  },
+                  {
+                    id: 'bridge-gamma',
+                    name: 'Bridge Gamma',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:19873',
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 3,
+              },
+            },
+          },
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole('checkbox', { name: 'Bridge Alpha' })).toBeChecked()
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const sourceToggle = within(sources).getByRole('button', { name: /Knowledge Sources/ })
+    await waitFor(() => {
+      expect(sourceToggle).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    await user.click(sourceToggle)
+    expect(sourceToggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(within(sources).getByRole('checkbox', { name: 'Bridge Beta' }))
+    expect(sourceToggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(within(sources).getByRole('checkbox', { name: 'Bridge Gamma' }))
+    expect(sourceToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Alpha' })).toBeChecked()
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Beta' })).not.toBeChecked()
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Gamma' })).not.toBeChecked()
+  })
+
+  it('deduplicates Agent Bridge sources by endpoint when switching A2A and MCP bridge runtimes', async () => {
+    const user = userEvent.setup()
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        if (body.method === 'tools/list') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              tools: [{ name: 'llmwiki_agent_run' }, { name: 'llmwiki_list_sources' }],
+              settingsUrl: 'http://127.0.0.1:8788/settings/agents',
+            },
+          })
+        }
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-alpha',
+                    name: 'Bridge Alpha',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:19871',
+                    status: 'ready',
+                    selected: true,
+                  },
+                  {
+                    id: 'bridge-beta',
+                    name: 'Bridge Beta',
+                    protocol: 'llmwiki-http',
+                    url: 'http://127.0.0.1:19872',
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 2,
+              },
+            },
+          },
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole('checkbox', { name: 'Bridge Alpha' })).toBeChecked()
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const sourceToggle = within(sources).getByRole('button', { name: /Knowledge Sources/ })
+    await user.click(sourceToggle)
+    await user.click(within(sources).getByRole('checkbox', { name: 'Bridge Beta' }))
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Beta' })).not.toBeChecked()
+
+    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
+    const bridgeToggleElement = agentBridge.querySelector<HTMLButtonElement>('.sidebar-section-toggle')
+    expect(bridgeToggleElement).toBeTruthy()
+    const bridgeToggle = bridgeToggleElement as HTMLButtonElement
+    if (bridgeToggle.getAttribute('aria-expanded') !== 'true') {
+      await user.click(bridgeToggle)
+    }
+    const mcpCard = within(agentBridge).getByRole('radio', { name: /Local Agent Bridge \(MCP\)/ }).closest('article')
+    expect(mcpCard).toBeTruthy()
+    await user.click(within(mcpCard as HTMLElement).getByRole('button', { name: 'Use Local Agent Bridge (MCP) runtime' }))
+
+    await waitFor(() => {
+      expect(within(agentBridge).getByRole('radio', { name: /Local Agent Bridge \(MCP\)/ })).toBeChecked()
+      expect(screen.getAllByRole('checkbox', { name: 'Bridge Alpha' })).toHaveLength(1)
+      expect(screen.getAllByRole('checkbox', { name: 'Bridge Beta' })).toHaveLength(1)
+    })
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Alpha' })).toBeChecked()
+    expect(within(sources).getByRole('checkbox', { name: 'Bridge Beta' })).not.toBeChecked()
   })
 
   it('shows bridge settings for Hermes when the discovered runtime is an Agent Bridge profile', async () => {
@@ -2236,7 +2568,7 @@ describe('LLMWiki Chat', () => {
     await user.click(within(runtimeCard as HTMLElement).getByRole('button', { name: 'Test runtime' }))
     expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
 
-    const storedAfterDiscovery = window.localStorage.getItem(knowledgeSourceStorageKey) || ''
+    const storedAfterDiscovery = window.localStorage.getItem(agentRuntimeStorageKey) || ''
     expect(storedAfterDiscovery).not.toContain('runtime-secret')
     expect(storedAfterDiscovery).not.toContain('bearerToken')
 
@@ -2252,7 +2584,7 @@ describe('LLMWiki Chat', () => {
       'Bearer runtime-secret',
     ])
     expect(runtimeMessageAuthHeader).toBe('Bearer runtime-secret')
-    const storedAfterRun = window.localStorage.getItem(knowledgeSourceStorageKey) || ''
+    const storedAfterRun = window.localStorage.getItem(agentRuntimeStorageKey) || ''
     expect(storedAfterRun).not.toContain('runtime-secret')
     expect(storedAfterRun).not.toContain('bearerToken')
   })
