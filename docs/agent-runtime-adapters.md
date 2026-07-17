@@ -216,9 +216,12 @@ operator-owned logging rules, and HTTPS at the network edge.
 
 Keep provider keys in the bridge process environment. Do not put model-provider
 keys in browser fields, URLs, docs, screenshots, Knowledge Source descriptors,
-or package artifacts. During the bridge flow, the browser talks only to the
-bridge URL; the bridge calls selected Knowledge Sources and the configured
-runtime from Node.
+or package artifacts. Bridge discovery and answer runs go through the bridge
+URL; the bridge calls selected Knowledge Sources and the configured runtime from
+Node. The local workbench may still use structured source URLs from selected
+bridge-managed sources for detail reads such as page previews. Do not copy
+private source URLs into public traces, docs, examples, screenshots, or package
+artifacts.
 
 Bridge bearer tokens are different from provider API keys. A bridge bearer token
 authorizes browser-to-bridge A2A requests and is configured with
