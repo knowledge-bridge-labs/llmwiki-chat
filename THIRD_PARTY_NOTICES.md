@@ -2,8 +2,8 @@
 
 LLMWiki Chat is licensed under Apache-2.0. It depends on third-party npm
 packages that are distributed under their own licenses. The npm package ships
-the built browser app in `dist/`, public docs, metadata files, and the local
-bridge binary listed in `package.json`.
+the built browser app in `dist/`, public docs, metadata files, and retained
+third-party license texts listed in `package.json`.
 
 The complete dependency graph and package metadata are recorded in
 `package-lock.json`. Review that file together with the upstream package license

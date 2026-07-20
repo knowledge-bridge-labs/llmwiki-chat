@@ -7,6 +7,12 @@ begin. Dates use `YYYY-MM-DD`.
 
 ## Unreleased
 
+- _No changes yet._
+
+## 0.1.0 - 2026-07-21
+
+- Added tokenless npm Trusted Publishing release workflow and documentation for
+  the first public npm package.
 - Added CODEOWNERS for the planned Knowledge Bridge Labs maintainer team and
   hardened the automated PR review guide's changed-file rendering.
 - Polished the README first screen with badges, public-preview status,
@@ -107,9 +113,6 @@ begin. Dates use `YYYY-MM-DD`.
 - Added agent status, tool call trace, citations, and graph/detail continuity in
   the chat UI.
 - Documented local `llmwiki-serve` integration and OSS contribution checks.
-
-## 0.1.0 - 2026-06-30
-
 - Initial React client for querying served LLMWiki knowledge graphs.
 - Added connection inventory, Markdown answers, citation chips, graph overview,
   node list, and details panel.
