@@ -49,9 +49,23 @@ export interface AgentRunResult {
   steps: AgentStep[]
 }
 
+export interface AgentRuntimeRequestLog {
+  transport: 'a2a-message:send' | 'mcp-tools/call'
+  summary: {
+    runtimeId: string
+    runtimeName: string
+    runtimeProtocol: AgentProtocol
+    selectedKnowledgeSourceCount: number
+    messagesIncluded: number
+    hasA2aMessage: boolean
+  }
+  body: Record<string, unknown>
+}
+
 export type AgentRunEvent =
   | { type: 'run_started'; step: AgentStep }
   | { type: 'status'; step: AgentStep }
+  | { type: 'runtime_request'; request: AgentRuntimeRequestLog }
   | { type: 'tool_call_started'; step: AgentStep; connectionId: string; toolName: string }
   | {
       type: 'tool_call_result'
@@ -453,7 +467,14 @@ export class ExternalA2aAgentRuntimeClient implements AgentRuntimeClient {
       steps.push(callStep)
       yield { type: 'status', step: callStep }
 
-      const response = await postExternalA2aRuntimeMessage(endpoint.messageUrl, request, request.signal)
+      const usableSources = selectedKnowledgeSources(request)
+      const requestBody = { data: agentRunArguments(request, usableSources) }
+      yield {
+        type: 'runtime_request',
+        request: agentRuntimeRequestLog('a2a-message:send', request, usableSources, requestBody),
+      }
+
+      const response = await postExternalA2aRuntimeMessage(endpoint.messageUrl, request, requestBody, request.signal)
       const parsed = parseA2aAgentRunResult(request, response)
       const doneCallStep = {
         ...callStep,
@@ -549,13 +570,24 @@ export class BridgeMcpAgentRuntimeClient implements AgentRuntimeClient {
       steps.push(callStep)
       yield { type: 'status', step: callStep }
 
+      const params = {
+        name: 'llmwiki_agent_run',
+        arguments: agentRunArguments(request, usableSources),
+      }
+      const requestBody = {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params,
+      }
+      yield {
+        type: 'runtime_request',
+        request: agentRuntimeRequestLog('mcp-tools/call', request, usableSources, requestBody),
+      }
+
       const response = await callBridgeMcpMethod(
         request.agent,
         'tools/call',
-        {
-          name: 'llmwiki_agent_run',
-          arguments: agentRunArguments(request, usableSources),
-        },
+        params,
         request.signal,
         `${request.agent.name} llmwiki_agent_run`,
         BRIDGE_MCP_RUNTIME_TOOL_TIMEOUT_MS,
@@ -947,18 +979,16 @@ async function loadExternalA2aRuntimeEndpoint(
 async function postExternalA2aRuntimeMessage(
   messageUrl: string,
   request: AgentRunRequest,
+  body: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const usableSources = selectedKnowledgeSources(request)
   const payload = await fetchJson<Record<string, unknown>>(messageUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...agentRuntimeAuthHeaders(request.agent),
     },
-    body: JSON.stringify({
-      data: agentRunArguments(request, usableSources),
-    }),
+    body: JSON.stringify(body),
     signal,
   }, `${request.agent.name} message:send`, EXTERNAL_A2A_RUNTIME_MESSAGE_TIMEOUT_MS)
   assertNoA2aRuntimeError(payload)
@@ -979,6 +1009,30 @@ function agentRunArguments(request: AgentRunRequest, usableSources: Connection[]
     runtimeContext: runtimeContextDescriptor(request, usableSources, conversation),
     knowledgeSources: usableSources.map(knowledgeSourceDescriptor),
     tools: usableSources.map(runtimeToolDescriptor),
+  }
+}
+
+function agentRuntimeRequestLog(
+  transport: AgentRuntimeRequestLog['transport'],
+  request: AgentRunRequest,
+  usableSources: Connection[],
+  body: Record<string, unknown>,
+): AgentRuntimeRequestLog {
+  const data = asRecord(body.data)
+    || asRecord(asRecord(body.params)?.arguments)
+    || {}
+  const messages = Array.isArray(data.messages) ? data.messages : []
+  return {
+    transport,
+    summary: {
+      runtimeId: request.agent.id,
+      runtimeName: request.agent.name,
+      runtimeProtocol: request.agent.protocol,
+      selectedKnowledgeSourceCount: usableSources.length,
+      messagesIncluded: messages.length,
+      hasA2aMessage: Boolean(asRecord(data.message)),
+    },
+    body,
   }
 }
 

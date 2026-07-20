@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { localIoLogStorageKey } from './localIoLog'
 import { isReachablePublicHttpsSourceUrl } from './urlPolicy'
 
 const externalRuntimeSourceUrlAdvisoryMessage = 'Warning: selected ready Knowledge Source URLs include HTTP, private, or non-public hosts. External runtimes may not be able to reach them; public or strict deployments should use public HTTPS sources or enforce runtime/proxy allowlists.'
@@ -169,7 +170,7 @@ async function askCustomA2aAnswer(
     metadata?: Record<string, unknown>
   } = {},
   question = 'Render the custom runtime answer',
-  options: { enableDebugTranscript?: boolean } = {},
+  options: { disableLocalIoLogging?: boolean } = {},
 ) {
   const user = userEvent.setup()
   stubFetch(() => Response.json(queryPayload()), async (url) => {
@@ -204,8 +205,8 @@ async function askCustomA2aAnswer(
   expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
 
   await user.click(within(runtimeCard as HTMLElement).getByRole('radio', { name: /Custom A2A/ }))
-  if (options.enableDebugTranscript) {
-    await user.click(screen.getByRole('checkbox', { name: /Raw debug transcript/ }))
+  if (options.disableLocalIoLogging) {
+    await user.click(screen.getByRole('checkbox', { name: /Local I\/O logging/ }))
   }
   await user.type(screen.getByLabelText('Question'), question)
   await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
@@ -321,6 +322,13 @@ function storageDump(storage: Storage): string {
   return Array.from({ length: storage.length }, (_value, index) => storage.key(index) || '')
     .map((key) => `${key}\n${storage.getItem(key) || ''}`)
     .join('\n')
+}
+
+function readLocalIoLogEntries(): Array<Record<string, unknown>> {
+  const raw = window.localStorage.getItem(localIoLogStorageKey) || ''
+  return raw.trim()
+    ? raw.trim().split(/\r?\n/).map((line) => JSON.parse(line) as Record<string, unknown>)
+    : []
 }
 
 function stubA2aRuntimeDiscovery(runtimeUrl = customA2aRuntimeUrl, runtimeName = 'Custom Runtime') {
@@ -1923,45 +1931,165 @@ describe('LLMWiki Chat', () => {
     expect(persistedConfig).not.toContain(sensitiveAnswer)
   })
 
-  it('keeps the raw debug transcript off by default and out of browser storage', async () => {
-    const debugPrompt = 'debug-default-off prompt must not be transcript-logged'
-    const debugAnswer = 'debug-default-off answer must not be transcript-logged'
+  it('stores local I/O log entries by default with prompt and answer canaries', async () => {
+    const user = userEvent.setup()
+    const debugPrompt = 'local-io-default prompt canary is stored'
+    const debugAnswer = 'local-io-default answer canary is stored'
 
     const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt)
 
     expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
-    expect(screen.getByRole('checkbox', { name: /Raw debug transcript/ })).not.toBeChecked()
-    expect(screen.queryByRole('region', { name: 'Raw debug transcript' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Local I\/O logging/ })).toBeChecked()
+    const localLog = screen.getByRole('region', { name: 'Local I/O log' })
+    await user.click(within(localLog).getByText('Local I/O log'))
+    expect(within(localLog).getByDisplayValue(debugPrompt)).toBeInTheDocument()
+    expect(within(localLog).getByDisplayValue(debugAnswer)).toBeInTheDocument()
+    expect(within(localLog).getByText('completed')).toBeInTheDocument()
+
+    await waitFor(() => {
+      const raw = window.localStorage.getItem(localIoLogStorageKey) || ''
+      expect(raw).toContain(debugPrompt)
+      expect(raw).toContain(debugAnswer)
+      const entries = readLocalIoLogEntries()
+      expect(entries).toHaveLength(1)
+      const entry = entries[0] as {
+        prompt: string
+        status: string
+        request?: { transport: string; body?: { data?: { query?: string } } }
+        response?: { answer?: string; metadata?: { status?: string; citationCount?: number } }
+      }
+      expect(entry.prompt).toBe(debugPrompt)
+      expect(entry.status).toBe('completed')
+      expect(entry.request?.transport).toBe('a2a-message:send')
+      expect(entry.request?.body?.data?.query).toBe(debugPrompt)
+      expect(entry.response?.answer).toBe(debugAnswer)
+      expect(entry.response?.metadata?.status).toBe('ready')
+      expect(entry.response?.metadata?.citationCount).toBe(0)
+    })
+  })
+
+  it('suppresses local I/O storage when the user opts out', async () => {
+    const debugPrompt = 'local-io-opt-out prompt canary must not be stored'
+    const debugAnswer = 'local-io-opt-out answer canary must not be stored'
+
+    const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt, { disableLocalIoLogging: true })
+
+    expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
+    expect(screen.getByRole('checkbox', { name: /Local I\/O logging/ })).not.toBeChecked()
+    expect(screen.queryByRole('region', { name: 'Local I/O log' })).not.toBeInTheDocument()
     const persisted = [
       storageDump(window.localStorage),
       storageDump(window.sessionStorage),
     ].join('\n')
+    expect(persisted).not.toContain(debugPrompt)
+    expect(persisted).not.toContain(debugAnswer)
+    expect(readLocalIoLogEntries()).toEqual([])
+  })
+
+  it('clears persisted local I/O log entries', async () => {
+    const user = userEvent.setup()
+    const debugPrompt = 'local-io-clear prompt canary'
+    const debugAnswer = 'local-io-clear answer canary'
+
+    const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt)
+
+    expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
+    expect(readLocalIoLogEntries()).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Clear local I/O log' }))
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem(localIoLogStorageKey)).toBeNull()
+    })
+    const localLog = screen.getByRole('region', { name: 'Local I/O log' })
+    await user.click(within(localLog).getByText('Local I/O log'))
+    expect(within(localLog).getByText('No local I/O entries collected yet.')).toBeInTheDocument()
+    const persisted = storageDump(window.localStorage)
     expect(persisted).not.toContain(debugPrompt)
     expect(persisted).not.toContain(debugAnswer)
   })
 
-  it('shows raw prompt and assistant answer only for the opt-in in-memory debug transcript', async () => {
-    const user = userEvent.setup()
-    const debugPrompt = 'debug-enabled prompt stays memory only'
-    const debugAnswer = 'debug-enabled answer stays memory only'
+  it('redacts credential and token canaries from persisted local I/O logs', async () => {
+    const safePromptCanary = 'local-io-redaction safe prompt canary'
+    const safeAnswerCanary = 'local-io-redaction safe answer canary'
+    const secretPromptToken = 'sk-proj-prompt-secret-canary'
+    const secretAnswerToken = 'sk-answersecret123456'
+    const bearerCanary = 'Bearer runtime-token-canary'
+    const metadataToken = 'metadata-token-canary'
+    const basicCanary = 'bG9jYWwtaW8tYmFzaWMtc2VjcmV0'
+    const cookieCanary = 'local-io-cookie-secret'
+    const setCookieCanary = 'local-io-set-cookie-secret'
+    const clientSecretCanary = 'local-io-client-secret'
+    const codeCanary = 'local-io-code-secret'
+    const signatureCanary = 'local-io-signature-secret'
+    const windowsPathCanary = 'C:\\Users\\angel\\local-io-secret.txt'
+    const uncPathCanary = '\\\\server\\share\\local-io-secret.txt'
+    const posixPathCanary = '/home/angel/local-io-secret.txt'
+    const varPathCanary = '/var/tmp/local-io-secret.txt'
 
-    const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt, { enableDebugTranscript: true })
+    const chat = await askCustomA2aAnswer(
+      `${safeAnswerCanary} ${secretAnswerToken}`,
+      {
+        steps: [
+          {
+            id: 'runtime-sensitive-step',
+            label: 'Sensitive diagnostic step',
+            status: 'completed',
+            detail: `Authorization: ${bearerCanary}`,
+            diagnostic: {
+              observations: [`token=${metadataToken}`],
+              partial: {
+                token: metadataToken,
+                sourceUrl: (
+                  'https://user:pass@wiki.example.test/context?'
+                  + `api_key=url-secret-canary&client_secret=${clientSecretCanary}`
+                  + `&code=${codeCanary}&signature=${signatureCanary}&ok=1`
+                ),
+              },
+            },
+          },
+        ],
+      },
+      [
+        safePromptCanary,
+        secretPromptToken,
+        bearerCanary,
+        `Basic ${basicCanary}`,
+        `Cookie: session=${cookieCanary}`,
+        `Set-Cookie: session=${setCookieCanary}`,
+        windowsPathCanary,
+        uncPathCanary,
+        posixPathCanary,
+        varPathCanary,
+      ].join(' '),
+    )
 
-    expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
-    const transcript = screen.getByRole('region', { name: 'Raw debug transcript' })
-    expect(within(transcript).getByText(debugPrompt)).toBeInTheDocument()
-    expect(within(transcript).getByText(debugAnswer)).toBeInTheDocument()
-    expect(within(transcript).getByText('completed')).toBeInTheDocument()
-
-    const persisted = [
-      storageDump(window.localStorage),
-      storageDump(window.sessionStorage),
-    ].join('\n')
-    expect(persisted).not.toContain(debugPrompt)
-    expect(persisted).not.toContain(debugAnswer)
-
-    await user.click(screen.getByRole('checkbox', { name: /Raw debug transcript/ }))
-    expect(screen.queryByRole('region', { name: 'Raw debug transcript' })).not.toBeInTheDocument()
+    expect((await within(chat).findAllByText(/local-io-redaction safe answer canary/)).length).toBeGreaterThan(0)
+    const raw = window.localStorage.getItem(localIoLogStorageKey) || ''
+    expect(raw).toContain(safePromptCanary)
+    expect(raw).toContain(safeAnswerCanary)
+    expect(raw).toContain('[redacted-api-key]')
+    expect(raw).toContain('Bearer [redacted]')
+    expect(raw).toContain('"token":"[redacted]"')
+    expect(raw).toContain('Basic [redacted]')
+    expect(raw).not.toContain(secretPromptToken)
+    expect(raw).not.toContain(secretAnswerToken)
+    expect(raw).not.toContain('runtime-token-canary')
+    expect(raw).not.toContain(metadataToken)
+    expect(raw).not.toContain('user:pass')
+    expect(raw).not.toContain('url-secret-canary')
+    expect(raw).not.toContain(customA2aRuntimeUrl)
+    expect(raw).not.toContain(publicSourceUrl)
+    expect(raw).not.toContain(basicCanary)
+    expect(raw).not.toContain(cookieCanary)
+    expect(raw).not.toContain(setCookieCanary)
+    expect(raw).not.toContain(clientSecretCanary)
+    expect(raw).not.toContain(codeCanary)
+    expect(raw).not.toContain(signatureCanary)
+    expect(raw).not.toContain(windowsPathCanary)
+    expect(raw).not.toContain(uncPathCanary)
+    expect(raw).not.toContain(posixPathCanary)
+    expect(raw).not.toContain(varPathCanary)
   })
 
   it('sends bounded conversation messages and stable session metadata to the selected runtime', async () => {
@@ -2004,11 +2132,11 @@ describe('LLMWiki Chat', () => {
 
     await user.type(screen.getByLabelText('Question'), 'First runtime history question')
     await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
-    expect(await screen.findByText('Runtime answer 1.')).toBeInTheDocument()
+    expect((await screen.findAllByText('Runtime answer 1.')).length).toBeGreaterThan(0)
 
     await user.type(screen.getByLabelText('Question'), 'Second runtime history question')
     await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
-    expect(await screen.findByText('Runtime answer 2.')).toBeInTheDocument()
+    expect((await screen.findAllByText('Runtime answer 2.')).length).toBeGreaterThan(0)
 
     const firstData = runtimeBodies[0].data as Record<string, unknown>
     const secondData = runtimeBodies[1].data as Record<string, unknown>

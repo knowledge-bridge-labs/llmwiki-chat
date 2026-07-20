@@ -13,7 +13,13 @@ import {
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import { agentClientFor, discoverAgentRuntime, discoverBridgeKnowledgeSources, starterAgentConnections } from './agents'
+import {
+  agentClientFor,
+  discoverAgentRuntime,
+  discoverBridgeKnowledgeSources,
+  starterAgentConnections,
+  type AgentRuntimeRequestLog,
+} from './agents'
 import { clientFor, diagnosticFromError } from './serveClient'
 import type {
   AgentConnection,
@@ -29,6 +35,16 @@ import type {
   Protocol,
 } from './domain'
 import { emptyGraph, mergeGraphs, namespaceGraph } from './graph'
+import {
+  clearLocalIoLogEntries,
+  loadLocalIoLogEntries,
+  loadLocalIoLoggingEnabled,
+  localIoLogJsonl,
+  localIoLogSchemaVersion,
+  persistLocalIoLoggingEnabled,
+  storeLocalIoLogEntries,
+  type LocalIoLogEntry,
+} from './localIoLog'
 import { isReachablePublicHttpsSourceUrl } from './urlPolicy'
 import './styles.css'
 
@@ -142,14 +158,6 @@ interface TurnAuditMetadata {
   toolCallCount: number
   requestId?: string
   traceId?: string
-}
-
-interface DebugTranscriptEntry {
-  id: string
-  turnId: string
-  userPrompt: string
-  assistantAnswer: string
-  status: 'running' | 'completed' | 'error'
 }
 
 type UiChatMessage = ChatMessage & {
@@ -594,8 +602,10 @@ export default function App() {
   const [runGraph, setRunGraph] = useState<RuntimeGraphState | null>(null)
   const [graphMode, setGraphMode] = useState<GraphMode>('selection')
   const [pageReadCache, setPageReadCache] = useState<Record<string, PageReadCacheEntry>>({})
-  const [debugTranscriptEnabled, setDebugTranscriptEnabled] = useState(false)
-  const [debugTranscript, setDebugTranscript] = useState<DebugTranscriptEntry[]>([])
+  const [localIoLoggingEnabled, setLocalIoLoggingEnabled] = useState(loadLocalIoLoggingEnabled)
+  const [localIoLogEntries, setLocalIoLogEntries] = useState(() => (
+    loadLocalIoLoggingEnabled() ? loadLocalIoLogEntries() : []
+  ))
   const threadRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const questionRef = useRef<HTMLTextAreaElement>(null)
@@ -608,7 +618,7 @@ export default function App() {
   const pageReadRequests = useRef(new Set<string>())
   const sessionIdRef = useRef(createId())
   const threadIdRef = useRef(createId())
-  const debugTranscriptEnabledRef = useRef(false)
+  const localIoLoggingEnabledRef = useRef(localIoLoggingEnabled)
   const initialConnections = useRef<Connection[] | null>(null)
   const initialAgents = useRef<AgentConnection[] | null>(null)
   if (initialConnections.current === null) initialConnections.current = connections
@@ -618,14 +628,24 @@ export default function App() {
     activeRunController.current?.abort()
   }, [])
 
-  const setDebugTranscriptCollection = useCallback((enabled: boolean) => {
-    debugTranscriptEnabledRef.current = enabled
-    setDebugTranscriptEnabled(enabled)
-    if (!enabled) setDebugTranscript([])
+  const commitLocalIoLogEntries = useCallback((updater: (entries: LocalIoLogEntry[]) => LocalIoLogEntry[]) => {
+    if (!localIoLoggingEnabledRef.current) return
+    setLocalIoLogEntries((current) => storeLocalIoLogEntries(updater(current)))
   }, [])
 
-  const clearDebugTranscript = useCallback(() => {
-    setDebugTranscript([])
+  const setLocalIoLogCollection = useCallback((enabled: boolean) => {
+    localIoLoggingEnabledRef.current = enabled
+    persistLocalIoLoggingEnabled(enabled)
+    setLocalIoLoggingEnabled(enabled)
+    if (!enabled) {
+      clearLocalIoLogEntries()
+      setLocalIoLogEntries([])
+    }
+  }, [])
+
+  const clearLocalIoLog = useCallback(() => {
+    clearLocalIoLogEntries()
+    setLocalIoLogEntries([])
   }, [])
 
   const abortActiveRunForScopeChange = useCallback((nextAgents: AgentConnection[], nextConnections: Connection[]) => {
@@ -987,7 +1007,6 @@ export default function App() {
     threadIdRef.current = createId()
     pendingAssistantScrollId.current = null
     setMessages([])
-    setDebugTranscript([])
     setQuery('')
     setBusy(false)
     setRunGraph(null)
@@ -1024,7 +1043,8 @@ export default function App() {
     const threadId = threadIdRef.current
     const sessionId = sessionIdRef.current
     const runtimeMessages = runtimeConversationMessages(messages, clean)
-    const captureDebugTranscript = debugTranscriptEnabledRef.current
+    const captureLocalIoLog = localIoLoggingEnabledRef.current
+    const localIoLogEntryId = createId()
     const startedAt = new Date().toISOString()
     const initialEvidenceGraph: RuntimeGraphState = {
       messageId: assistantId,
@@ -1058,15 +1078,27 @@ export default function App() {
         toolCalls: [],
       },
     ])
-    if (captureDebugTranscript) {
-      setDebugTranscript((items) => [
+    if (captureLocalIoLog) {
+      commitLocalIoLogEntries((items) => [
         ...items,
         {
-          id: createId(),
+          schemaVersion: localIoLogSchemaVersion,
+          id: localIoLogEntryId,
           turnId,
-          userPrompt: clean,
-          assistantAnswer: '',
+          threadId,
+          sessionId,
+          messageId: userMessageId,
+          assistantMessageId: assistantId,
+          startedAt,
+          updatedAt: startedAt,
           status: 'running',
+          runtime: {
+            id: agent.id,
+            name: agent.name,
+            protocol: agent.protocol,
+            ...(agent.bridge?.mode ? { mode: agent.bridge.mode } : {}),
+          },
+          prompt: clean,
         },
       ])
     }
@@ -1075,9 +1107,9 @@ export default function App() {
       setMessages((items) => items.map((item) => (item.id === assistantId ? updater(item) : item)))
     }
 
-    const updateDebugTranscript = (updater: (entry: DebugTranscriptEntry) => DebugTranscriptEntry) => {
-      if (!debugTranscriptEnabledRef.current) return
-      setDebugTranscript((items) => items.map((item) => (item.turnId === turnId ? updater(item) : item)))
+    const updateLocalIoLogEntry = (updater: (entry: LocalIoLogEntry) => LocalIoLogEntry) => {
+      if (!localIoLoggingEnabledRef.current) return
+      commitLocalIoLogEntries((items) => items.map((item) => (item.id === localIoLogEntryId ? updater(item) : item)))
     }
 
     let completed = false
@@ -1097,6 +1129,14 @@ export default function App() {
           updateAssistant((message) => ({
             ...message,
             steps: upsertStep(message.steps || [], event.step),
+          }))
+        }
+
+        if (event.type === 'runtime_request') {
+          updateLocalIoLogEntry((entry) => ({
+            ...entry,
+            request: localIoLogRuntimeRequest(event.request),
+            updatedAt: new Date().toISOString(),
           }))
         }
 
@@ -1155,9 +1195,13 @@ export default function App() {
 
         if (event.type === 'answer_delta') {
           updateAssistant((message) => ({ ...message, text: `${message.text}${event.delta}` }))
-          updateDebugTranscript((entry) => ({
+          updateLocalIoLogEntry((entry) => ({
             ...entry,
-            assistantAnswer: `${entry.assistantAnswer}${event.delta}`,
+            response: {
+              ...entry.response,
+              answer: `${entry.response?.answer || ''}${event.delta}`,
+            },
+            updatedAt: new Date().toISOString(),
           }))
         }
 
@@ -1195,10 +1239,22 @@ export default function App() {
           setSelectedCitation(firstCitation)
           setSelectedCitationReturnTarget(null)
           setSelectedNodeId(firstCitation ? graphNodeIdForCitation(firstCitation, completedEvidenceGraph.graph) : '')
-          updateDebugTranscript((entry) => ({
+          updateLocalIoLogEntry((entry) => ({
             ...entry,
-            assistantAnswer: orderedResult.answer,
+            response: {
+              answer: orderedResult.answer,
+              metadata: localIoLogResponseMetadata(
+                finalRuntimeStatus,
+                completedAt,
+                orderedResult.citations,
+                completedEvidenceGraph.graph,
+                event.result.steps,
+                toolCalls,
+              ),
+            },
             status: finalRuntimeStatus === 'error' ? 'error' : 'completed',
+            completedAt,
+            updatedAt: completedAt,
           }))
           updateAssistant((message) => ({
             ...message,
@@ -1240,10 +1296,19 @@ export default function App() {
       const assistantFailure = canceled
         ? 'Canceled because the selected scope changed. Ask again when the intended sources and runtime are selected.'
         : `Agent run failed: ${message}`
-      updateDebugTranscript((entry) => ({
+      updateLocalIoLogEntry((entry) => ({
         ...entry,
-        assistantAnswer: entry.assistantAnswer || assistantFailure,
+        response: {
+          ...entry.response,
+          answer: entry.response?.answer || assistantFailure,
+        },
+        error: {
+          message: assistantFailure,
+          diagnostic,
+        },
         status: 'error',
+        completedAt,
+        updatedAt: completedAt,
       }))
       updateAssistant((item) => {
         const nextSteps = upsertStep(item.steps || [], {
@@ -1477,12 +1542,6 @@ export default function App() {
               {askStatusMessage}
             </p>
           </form>
-          <DebugTranscriptPanel
-            enabled={debugTranscriptEnabled}
-            entries={debugTranscript}
-            onToggle={setDebugTranscriptCollection}
-            onClear={clearDebugTranscript}
-          />
         </div>
       </section>
       <aside className="inspector" aria-label="Knowledge graph and details" ref={inspectorRef}>
@@ -1534,6 +1593,12 @@ export default function App() {
           onSelectNode={selectGraphNode}
           onBackToAnswer={selectedCitationReturnTarget ? () => revealAnswerCitation(selectedCitationReturnTarget) : undefined}
         />
+        <LocalIoLogPanel
+          enabled={localIoLoggingEnabled}
+          entries={localIoLogEntries}
+          onToggle={setLocalIoLogCollection}
+          onClear={clearLocalIoLog}
+        />
       </aside>
       <aside className="sidebar" aria-label="Knowledge connections">
         <h2 className="mobile-management-heading">Source management</h2>
@@ -1553,66 +1618,145 @@ export default function App() {
   )
 }
 
-function DebugTranscriptPanel({
+function LocalIoLogPanel({
   enabled,
   entries,
   onToggle,
   onClear,
 }: {
   enabled: boolean
-  entries: DebugTranscriptEntry[]
+  entries: LocalIoLogEntry[]
   onToggle: (enabled: boolean) => void
   onClear: () => void
 }) {
+  const [actionStatus, setActionStatus] = useState('')
+  const jsonl = useMemo(() => localIoLogJsonl(entries), [entries])
+  const newestEntries = useMemo(() => [...entries].reverse(), [entries])
+
+  async function copyJsonl() {
+    if (!entries.length) return
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(jsonl)
+      setActionStatus('Copied JSONL to clipboard.')
+    } catch {
+      setActionStatus('Copy failed; use Export JSONL or select the visible entry text.')
+    }
+  }
+
+  function exportJsonl() {
+    if (!entries.length) return
+    try {
+      if (!URL.createObjectURL) throw new Error('Object URLs unavailable')
+      const blob = new Blob([jsonl], { type: 'application/x-ndjson' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `llmwiki-chat-local-io-log-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`
+      link.click()
+      URL.revokeObjectURL(url)
+      setActionStatus('Exported JSONL download.')
+    } catch {
+      setActionStatus('Export failed; copy the visible JSONL instead.')
+    }
+  }
+
   return (
-    <section className="debug-transcript-controls" aria-label="Debug transcript controls">
-      <label className="debug-transcript-toggle">
+    <section className="local-io-log-controls" aria-label="Local I/O logging controls">
+      <label className="local-io-log-toggle">
         <input
           type="checkbox"
           checked={enabled}
           onChange={(event) => onToggle(event.target.checked)}
         />
-        <span>Raw debug transcript</span>
+        <span>Local I/O logging</span>
       </label>
       <p>
-        Off by default. When enabled, raw prompts and assistant answers stay in current-tab memory only.
-        The redacted turn audit remains separate.
+        On by default for local debugging. Recent prompts, runtime request payloads, answers, errors, and metadata
+        are stored as bounded JSONL in this browser only. Authorization headers, bearer tokens, API keys, and
+        credential-bearing URL parts are redacted before storage.
       </p>
       {enabled ? (
-        <div className="debug-transcript-panel" role="region" aria-label="Raw debug transcript">
-          <div className="debug-transcript-panel-header">
-            <strong>Raw debug transcript</strong>
-            <button type="button" onClick={onClear} disabled={!entries.length}>
-              Clear debug transcript
-            </button>
+        <details className="local-io-log-panel" role="region" aria-label="Local I/O log">
+          <summary className="local-io-log-panel-header">
+            <strong>Local I/O log</strong>
+            <span>{entries.length ? `${entries.length} retained entr${entries.length === 1 ? 'y' : 'ies'}.` : 'No entries yet.'}</span>
+          </summary>
+          <div className="local-io-log-panel-body">
+            <div className="local-io-log-actions" role="group" aria-label="Local I/O log actions">
+              <button type="button" onClick={() => void copyJsonl()} disabled={!entries.length}>
+                Copy JSONL
+              </button>
+              <button type="button" onClick={exportJsonl} disabled={!entries.length}>
+                Export JSONL
+              </button>
+              <button type="button" onClick={onClear} disabled={!entries.length}>
+                Clear local I/O log
+              </button>
+            </div>
+            {actionStatus ? <p className="local-io-log-action-status" aria-live="polite">{actionStatus}</p> : null}
+            <p>{entries.length ? `${entries.length} retained entr${entries.length === 1 ? 'y' : 'ies'}.` : 'No local I/O entries collected yet.'}</p>
+            {newestEntries.length ? (
+              <ol>
+                {newestEntries.map((entry) => (
+                  <li key={entry.id}>
+                    <div className={`local-io-log-status ${entry.status}`}>{entry.status}</div>
+                    <dl>
+                      <div>
+                        <dt>Turn ID</dt>
+                        <dd>{entry.turnId}</dd>
+                      </div>
+                      <div>
+                        <dt>Started</dt>
+                        <dd>{entry.startedAt}</dd>
+                      </div>
+                      <div>
+                        <dt>Runtime request</dt>
+                        <dd>{entry.request ? `${entry.request.transport} · ${entry.request.summary.selectedKnowledgeSourceCount || 0} source(s) · ${entry.request.summary.messagesIncluded || 0} message(s)` : 'Waiting for runtime request...'}</dd>
+                      </div>
+                      <div>
+                        <dt>User prompt</dt>
+                        <dd>
+                          <input
+                            aria-label={`User prompt for turn ${entry.turnId}`}
+                            className="local-io-log-field"
+                            readOnly
+                            value={entry.prompt}
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Assistant answer or error</dt>
+                        <dd>
+                          <input
+                            aria-label={`Assistant answer or error for turn ${entry.turnId}`}
+                            className="local-io-log-field"
+                            readOnly
+                            value={entry.response?.answer || entry.error?.message || 'Waiting for assistant answer...'}
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>JSONL entry</dt>
+                        <dd>
+                          <input
+                            aria-label={`JSONL entry for turn ${entry.turnId}`}
+                            className="local-io-log-field local-io-log-json"
+                            readOnly
+                            value={JSON.stringify(entry, null, 2)}
+                          />
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
           </div>
-          {entries.length ? (
-            <ol>
-              {entries.map((entry) => (
-                <li key={entry.id}>
-                  <div className={`debug-transcript-status ${entry.status}`}>{entry.status}</div>
-                  <dl>
-                    <div>
-                      <dt>Turn ID</dt>
-                      <dd>{entry.turnId}</dd>
-                    </div>
-                    <div>
-                      <dt>Raw user prompt</dt>
-                      <dd>{entry.userPrompt}</dd>
-                    </div>
-                    <div>
-                      <dt>Raw assistant answer</dt>
-                      <dd>{entry.assistantAnswer || 'Waiting for assistant answer...'}</dd>
-                    </div>
-                  </dl>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p>No raw transcript entries collected for this tab.</p>
-          )}
-        </div>
-      ) : null}
+        </details>
+      ) : (
+        <p className="local-io-log-disabled">Local I/O logging is off. Stored raw entries were cleared and future turns will not be logged until you re-enable it.</p>
+      )}
     </section>
   )
 }
@@ -4338,6 +4482,54 @@ function safeAuditId(value: string | undefined): string | undefined {
   if (/^(?:https?|wss?):/i.test(clean)) return undefined
   if (/(?:bearer|token|secret|password|sk-[A-Za-z0-9_-]|sk-proj-[A-Za-z0-9_-])/i.test(clean)) return undefined
   return clean
+}
+
+function localIoLogRuntimeRequest(request: AgentRuntimeRequestLog): LocalIoLogEntry['request'] {
+  return {
+    transport: request.transport,
+    summary: request.summary,
+    body: request.body,
+  }
+}
+
+function localIoLogResponseMetadata(
+  status: RuntimeStatus,
+  completedAt: string,
+  citations: Citation[],
+  graph: KnowledgeGraph,
+  steps: AgentStep[],
+  toolCalls: AgentToolCallTrace[],
+): Record<string, unknown> {
+  return {
+    status,
+    completedAt,
+    citationCount: citations.length,
+    graphNodeCount: graph.nodes.length,
+    graphEdgeCount: graph.edges.length,
+    stepCount: steps.length,
+    toolCallCount: toolCalls.length,
+    ...safeTurnAuditIds(steps),
+    steps: steps.map(localIoLogStepMetadata),
+  }
+}
+
+function localIoLogStepMetadata(step: AgentStep): Record<string, unknown> {
+  const requestId = safeAuditId(step.requestId)
+  const traceId = safeAuditId(step.traceId)
+  return {
+    id: step.id,
+    label: step.label,
+    status: step.status,
+    ...(step.detail ? { detail: step.detail } : {}),
+    ...(step.error ? { error: step.error } : {}),
+    ...(step.runtimeId ? { runtimeId: step.runtimeId } : {}),
+    ...(step.toolName ? { toolName: step.toolName } : {}),
+    ...(step.connectionId ? { connectionId: step.connectionId } : {}),
+    ...(step.citationIds?.length ? { citationIds: step.citationIds } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(traceId ? { traceId } : {}),
+    ...(step.diagnostic ? { diagnostic: step.diagnostic } : {}),
+  }
 }
 
 function updateAnswerScopeRuntimeStatus(

@@ -132,6 +132,7 @@ the surrounding network is protected.
 | Knowledge Source URLs | Public HTTPS is the best default for shared deployments. HTTP, private, tailnet, local, single-label, `.local`, `.internal`, and other non-public source URLs are allowed for OSS, local, and private use; the UI warns when selected sources may be unreachable or unsafe for external runtimes. |
 | Bearer tokens | Runtime bearer tokens stay in current-tab browser state, are sent only as `Authorization: Bearer ...` for agent-card discovery and `message:send`, and are not saved to localStorage, Knowledge Source descriptors, runtime request bodies, or package artifacts. |
 | Provider secrets | Keep model-provider keys in the external runtime or `llmwiki-agent-bridge` process environment. Do not paste provider keys into the browser. |
+| Local I/O logging | The browser workbench keeps a bounded, default-on local JSONL log in localStorage for debugging prompts, runtime request payloads, answers/errors, and response metadata. Use the `Local I/O logging` toggle to opt out and clear raw entries; Authorization headers, bearer tokens, API-key shaped values, and credential-bearing URL parts are redacted before storage. |
 
 ## Release Status
 
@@ -301,6 +302,11 @@ identity checks, validation guidance, and companion bridge setup, see
   Knowledge Source URL they receive.
 - Keep runtime provider keys in the external runtime or `llmwiki-agent-bridge`
   process environment. Do not paste model-provider keys into the browser.
+- Local I/O logging is enabled by default to make static-app debugging
+  accessible without server file writes. It stores recent sanitized JSONL
+  entries in this browser's localStorage only; opt out with the
+  `Local I/O logging` toggle or use the panel's clear control before demos,
+  screenshots, or shared-device use.
 - Do not add real credentials, bearer tokens, private endpoint URLs, private
   exports, raw sensitive request logs, or screenshots with private
   infrastructure to examples, issues, docs, tests, or release artifacts.

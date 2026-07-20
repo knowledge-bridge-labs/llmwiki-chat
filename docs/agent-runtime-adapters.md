@@ -376,15 +376,19 @@ selected/ready/observed-used source counts, timestamps or duration, final
 status, citation/graph/step/tool-call counts, and safe request or trace IDs when
 the bridge or runtime returns them. It does not include prompts, answers,
 bearer tokens, endpoint URLs, source URLs, or provider/model secrets, and it is
-not saved to localStorage/sessionStorage by default. Server-side proof of bridge/runtime and
-source calls belongs in `llmwiki-agent-bridge` audit logs.
+not saved to localStorage/sessionStorage. Server-side proof of bridge/runtime
+and source calls belongs in `llmwiki-agent-bridge` audit logs.
 
-Raw debug transcript logging is separate from the redacted turn audit. It is off
-by default and requires the explicit `Raw debug transcript` UI toggle. When
-enabled, the browser displays raw user prompts and assistant answers from the
-current tab's React memory only. It must not write raw transcript text to
-localStorage, sessionStorage, or a server; disabling the toggle clears collected
-entries, and chat reset also clears them.
+Local I/O logging is separate from the redacted turn audit. It is enabled by
+default because the static browser app cannot write arbitrary server-side debug
+files. The `Local I/O logging` panel stores recent JSONL entries in browser
+localStorage with user prompts, runtime request payload bodies/summaries,
+assistant answers or errors, response metadata, timestamps, and turn/session
+identifiers. Retention is bounded, the panel exposes copy/export/clear controls,
+and disabling the toggle opts out and clears stored raw entries. Authorization
+headers are not included in log events, and bearer tokens, API-key shaped
+values, sensitive token fields, and credential-bearing URL parts are redacted
+before persistence.
 
 For best evidence ordering, each runtime step that read citations should include
 `citation_ids` or `citationIds` in the order the runtime used those citations.

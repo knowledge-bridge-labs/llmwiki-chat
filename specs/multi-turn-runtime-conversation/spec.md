@@ -19,7 +19,9 @@ conversation continuity at the bridge/runtime boundary.
 
 - No custom lossy summary context.
 - No prompt-cache implementation in the browser.
-- No server-side or localStorage transcript persistence.
+- No server-side transcript persistence. Browser-local raw I/O logging is a
+  separate default-on debugging surface with bounded retention, opt-out, clear
+  controls, and redaction.
 - No keyword intent classifier or source preselection based on query text.
 
 ## Requirements

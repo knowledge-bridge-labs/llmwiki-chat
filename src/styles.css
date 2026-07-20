@@ -758,7 +758,7 @@ dd,
   white-space: nowrap;
 }
 
-.debug-transcript-controls {
+.local-io-log-controls {
   display: grid;
   gap: 6px;
   border: 1px dashed #b8c5d8;
@@ -767,7 +767,7 @@ dd,
   padding: 8px 10px;
 }
 
-.debug-transcript-toggle {
+.local-io-log-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -776,46 +776,79 @@ dd,
   font-weight: 760;
 }
 
-.debug-transcript-controls p {
+.local-io-log-controls p {
   margin: 0;
 }
 
-.debug-transcript-panel {
-  display: grid;
-  gap: 8px;
+.local-io-log-panel {
   border-top: 1px solid #dbe3ef;
   padding-top: 8px;
 }
 
-.debug-transcript-panel-header {
+.local-io-log-panel-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  cursor: pointer;
+  list-style: none;
 }
 
-.debug-transcript-panel ol {
+.local-io-log-panel-header::-webkit-details-marker {
+  display: none;
+}
+
+.local-io-log-panel-header::after {
+  content: "Show log";
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.local-io-log-panel[open] > .local-io-log-panel-header::after {
+  content: "Hide log";
+}
+
+.local-io-log-panel-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.local-io-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.local-io-log-action-status,
+.local-io-log-disabled {
+  color: #526073;
+  font-size: 12px;
+}
+
+.local-io-log-panel ol {
   display: grid;
   gap: 8px;
   margin: 0;
   padding-left: 20px;
 }
 
-.debug-transcript-panel li {
+.local-io-log-panel li {
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #fff;
   padding: 8px;
 }
 
-.debug-transcript-panel dl {
+.local-io-log-panel dl {
   display: grid;
   gap: 6px;
   margin: 0;
 }
 
-.debug-transcript-panel dt {
+.local-io-log-panel dt {
   color: #5c667a;
   font-size: 11px;
   font-weight: 760;
@@ -823,14 +856,34 @@ dd,
   letter-spacing: 0.02em;
 }
 
-.debug-transcript-panel dd {
+.local-io-log-panel dd {
   margin: 2px 0 0;
   color: #10233f;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.debug-transcript-status {
+.local-io-log-field {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px;
+  color: #10233f;
+  font: inherit;
+  font-size: 12px;
+}
+
+.local-io-log-json {
+  max-height: 220px;
+  overflow: auto;
+  background: #f5f7fb;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.local-io-log-status {
   justify-self: start;
   margin-bottom: 6px;
   border-radius: 999px;
@@ -841,12 +894,12 @@ dd,
   font-weight: 760;
 }
 
-.debug-transcript-status.completed {
+.local-io-log-status.completed {
   background: #eefbf4;
   color: #146c43;
 }
 
-.debug-transcript-status.error {
+.local-io-log-status.error {
   background: #fff1f1;
   color: #a32121;
 }
