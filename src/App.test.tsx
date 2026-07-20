@@ -474,6 +474,38 @@ describe('LLMWiki Chat', () => {
     expect(within(sources).getByLabelText('Source selection selected')).toBeInTheDocument()
   })
 
+  it('shows browser-safe quickstart commands and reuses existing test actions', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubFetch()
+
+    render(<App />)
+
+    const quickstart = await screen.findByRole('region', { name: 'Quickstart' })
+    expect(within(quickstart).getByRole('heading', {
+      name: 'Start services in a shell, then verify them here.',
+    })).toBeInTheDocument()
+    expect(within(quickstart).getByText(/cannot install packages, start local processes/)).toBeInTheDocument()
+    expect(within(quickstart).getByText(/llmwiki-serve==0\.2\.0/)).toBeInTheDocument()
+    expect(within(quickstart).getByText(/llmwiki-agent-bridge@0\.1\.0/)).toBeInTheDocument()
+    expect(within(quickstart).getByText('/path/to/wiki')).toBeInTheDocument()
+
+    await user.click(within(quickstart).getByRole('button', { name: 'Use Local Development Runtime' }))
+    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+
+    fetchMock.mockClear()
+    await user.click(within(quickstart).getByRole('button', { name: 'Test sample source' }))
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('http://127.0.0.1:8765/manifest'))).toBe(true)
+    })
+
+    fetchMock.mockClear()
+    await user.click(within(quickstart).getByRole('button', { name: 'Test local bridge' }))
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('http://127.0.0.1:8788/.well-known/agent-card.json'))).toBe(true)
+    })
+    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+  })
+
   it('auto-collapses ready sidebar sections and allows manual expansion for editing', async () => {
     const user = userEvent.setup()
     stubFetch(() => Response.json(queryPayload()), async (url) => {

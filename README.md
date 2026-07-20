@@ -78,25 +78,28 @@ npm run dev
 
 Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 
-1. Use the prefilled `Local sample LLMWiki` source first. Confirm its URL is
-   `http://127.0.0.1:8765`, then click `Test source`.
-2. A ready source loads page, graph, and citation context into the Knowledge
+1. Start with the Quickstart panel in the empty chat state. The panel shows
+   copyable shell commands for `llmwiki-serve` and `llmwiki-agent-bridge` and
+   makes the browser/process boundary explicit.
+2. Use the prefilled `Local sample LLMWiki` source first. Confirm its URL is
+   `http://127.0.0.1:8765`, then click `Test sample source` or `Test source`.
+3. A ready source loads page, graph, and citation context into the Knowledge
    map, Pages, and Details panels.
-3. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
+4. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
    `MCP`, enter the endpoint URL, and click `Add`.
-4. Prefer the default Local Agent Bridge A2A or MCP path when
+5. Prefer the default Local Agent Bridge A2A or MCP path when
    `llmwiki-agent-bridge` is running at `http://127.0.0.1:8788`; confirm the
    bridge URL and click `Test bridge`.
-5. When the bridge is ready, chat discovers the bridge's registered Knowledge
+6. When the bridge is ready, chat discovers the bridge's registered Knowledge
    Sources and shows them as bridge-managed, read-only source cards. Edit those
    sources in the bridge settings page. Keep direct source cards in chat for
    standalone `llmwiki-serve` testing and debugging.
-6. If no bridge is running, switch to `Local Development Runtime` under
+7. If no bridge is running, switch to `Local Development Runtime` under
    testing/developer runtime options for deterministic UI, trace, citation, and
    graph rendering checks. It is not an answer-quality runtime.
-7. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
+8. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
-8. Review the answer, citations, artifacts, and trace before treating the result
+9. Review the answer, citations, artifacts, and trace before treating the result
    as useful.
 
 The Vite command starts only the browser client. It does not start
@@ -136,10 +139,9 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public source-checkout preview. Source-checkout usage is
-the supported path today. Package metadata and repository links target the
-Knowledge Bridge Labs organization; package-install links become active after
-package publication. See the [release checklist](docs/release.md) for the
+`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.0`.
+Source checkout remains supported for local development and release checks.
+See the [release checklist](docs/release.md) and hosted release status for the
 current posture.
 
 ## Demo

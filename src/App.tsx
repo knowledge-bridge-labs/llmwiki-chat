@@ -85,6 +85,19 @@ const starterConnections: Connection[] = [
   },
 ]
 
+const quickstartServeCommand = [
+  'uvx --from llmwiki-serve==0.2.0 llmwiki-serve serve /path/to/wiki --host 127.0.0.1 --port 8765',
+]
+const quickstartSampleServeCommand = [
+  'git clone https://github.com/knowledge-bridge-labs/llmwiki-serve.git',
+  'cd llmwiki-serve',
+  'uv sync --extra dev',
+  'uv run llmwiki-serve serve ./examples/sample-wiki --host 127.0.0.1 --port 8765',
+]
+const quickstartBridgeCommand = [
+  'npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge',
+]
+
 const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
 const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
 const runtimeConversationMessageLimit = 12
@@ -1017,6 +1030,45 @@ export default function App() {
     focusQuestionComposer()
   }, [abortActiveRun, focusQuestionComposer])
 
+  const testSampleSourceQuickstart = useCallback(() => {
+    const sampleConnection: Connection = {
+      ...starterConnections[0],
+      selected: true,
+      status: 'unknown',
+      error: '',
+      diagnostic: undefined,
+      graph: undefined,
+      latencyMs: undefined,
+    }
+    const nextConnections = [
+      sampleConnection,
+      ...connections
+        .filter((connection) => connection.id !== sampleConnection.id)
+        .map((connection) => ({ ...connection, selected: false })),
+    ]
+    updateConnections(nextConnections)
+    showSelectionGraph()
+    void discover(sampleConnection)
+  }, [connections, discover, showSelectionGraph, updateConnections])
+
+  const testLocalBridgeQuickstart = useCallback(() => {
+    const nextAgents = agents.map((agent) => (
+      agent.id === 'bridge-a2a'
+        ? { ...agent, selected: true, status: agent.url?.trim() ? 'unknown' as const : 'unavailable' as const }
+        : { ...agent, selected: false }
+    ))
+    updateAgents(nextAgents)
+    const localBridge = nextAgents.find((agent) => agent.id === 'bridge-a2a')
+    if (localBridge) void discoverRuntime(localBridge)
+  }, [agents, discoverRuntime, updateAgents])
+
+  const useLocalDevelopmentRuntimeQuickstart = useCallback(() => {
+    updateAgents(agents.map((agent) => ({
+      ...agent,
+      selected: agent.protocol === 'mock-agent',
+    })))
+  }, [agents, updateAgents])
+
   async function ask() {
     await askWith(query)
   }
@@ -1503,6 +1555,15 @@ export default function App() {
                   )
                 })}
               </div>
+              <QuickstartPanel
+                agents={agents}
+                connections={connections}
+                selectedAgent={selectedAgent}
+                runtimeStatus={runtimeStatus}
+                onTestSampleSource={testSampleSourceQuickstart}
+                onTestLocalBridge={testLocalBridgeQuickstart}
+                onUseLocalDevelopmentRuntime={useLocalDevelopmentRuntimeQuickstart}
+              />
               {suggestedPromptStatusMessage ? (
                 <p id="suggested-prompt-status" className="ask-guidance" aria-live="polite">
                   {suggestedPromptStatusMessage}
@@ -1875,6 +1936,110 @@ function LocalSessionSummary({
         </dl>
       </details>
     </div>
+  )
+}
+
+function QuickstartPanel({
+  agents,
+  connections,
+  selectedAgent,
+  runtimeStatus,
+  onTestSampleSource,
+  onTestLocalBridge,
+  onUseLocalDevelopmentRuntime,
+}: {
+  agents: AgentConnection[]
+  connections: Connection[]
+  selectedAgent: AgentConnection
+  runtimeStatus: RuntimeStatus
+  onTestSampleSource: () => void
+  onTestLocalBridge: () => void
+  onUseLocalDevelopmentRuntime: () => void
+}) {
+  const sampleSource = connections.find(isStarterConnection) || connections[0]
+  const localBridge = agents.find((agent) => agent.id === 'bridge-a2a')
+  const localDevelopmentRuntime = agents.find((agent) => agent.protocol === 'mock-agent')
+  const bridgeChecking = localBridge?.status === 'checking'
+  const sourceChecking = sampleSource?.status === 'checking'
+
+  return (
+    <section className="quickstart-panel panel" aria-label="Quickstart">
+      <div className="quickstart-heading">
+        <div>
+          <p>First-run quickstart</p>
+          <h2>Start services in a shell, then verify them here.</h2>
+        </div>
+        <span className="scope-chip">browser-safe</span>
+      </div>
+      <p>
+        The browser workbench cannot install packages, start local processes, or
+        read arbitrary wiki paths. Run one of these commands in a trusted local
+        shell, then use the checks below.
+      </p>
+      <dl className="quickstart-status" aria-label="Quickstart status">
+        <div>
+          <dt>Sample source</dt>
+          <dd>
+            <span className={`status-chip ${sampleSource?.status || 'unknown'}`}>
+              {sampleSource?.status || 'unknown'}
+            </span>
+            <span>{sampleSource?.url || defaultServeUrl()}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Local bridge</dt>
+          <dd>
+            <span className={`status-chip ${localBridge?.status || 'unknown'}`}>
+              {localBridge?.status || 'unknown'}
+            </span>
+            <span>{localBridge?.url || 'http://127.0.0.1:8788'}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Selected runtime</dt>
+          <dd>
+            <span className={`status-chip ${runtimeStatus}`}>{runtimeStatus}</span>
+            <span>{runtimeSummaryLabel(selectedAgent, runtimeStatus)}</span>
+          </dd>
+        </div>
+      </dl>
+      <div className="quickstart-actions" role="group" aria-label="Quickstart actions">
+        <button type="button" onClick={onTestSampleSource} disabled={sourceChecking}>
+          {sourceChecking ? 'Testing sample source...' : 'Test sample source'}
+        </button>
+        <button type="button" onClick={onTestLocalBridge} disabled={!localBridge || bridgeChecking}>
+          {bridgeChecking ? 'Testing local bridge...' : 'Test local bridge'}
+        </button>
+        <button
+          className="secondary-action"
+          type="button"
+          onClick={onUseLocalDevelopmentRuntime}
+          disabled={Boolean(localDevelopmentRuntime?.selected)}
+        >
+          Use Local Development Runtime
+        </button>
+      </div>
+      <details className="quickstart-command-details">
+        <summary>Show commands</summary>
+        <div className="quickstart-grid">
+          <div>
+            <h3>Serve a wiki</h3>
+            <pre className="quickstart-command"><code>{quickstartServeCommand.join('\n')}</code></pre>
+            <small>Replace <code>/path/to/wiki</code> with your Markdown, Obsidian, or LLMWiki folder.</small>
+          </div>
+          <div>
+            <h3>Use the bundled sample</h3>
+            <pre className="quickstart-command"><code>{quickstartSampleServeCommand.join('\n')}</code></pre>
+            <small>Use this when you want a known-good source before trying private content.</small>
+          </div>
+          <div>
+            <h3>Start the local bridge</h3>
+            <pre className="quickstart-command"><code>{quickstartBridgeCommand.join('\n')}</code></pre>
+            <small>Hermes, DeepAgents, or OpenAI-compatible runtimes stay behind the bridge.</small>
+          </div>
+        </div>
+      </details>
+    </section>
   )
 }
 

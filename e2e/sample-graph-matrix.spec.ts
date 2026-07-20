@@ -16,6 +16,8 @@ interface SampleSource {
   id: string
   name: string
   query: string
+  queryClass: string
+  fixtureClasses: string[]
   url: string
 }
 
@@ -60,6 +62,24 @@ test.describe('sample knowledge graph matrix', () => {
     }, [agentRuntimeStorageKey])
   })
 
+  test('declares reusable approval coverage metadata', async () => {
+    expect(sampleSources.map((source) => source.id)).toEqual(expect.arrayContaining([
+      'sample-wiki',
+      'obsidian-vault',
+      'llmwiki-compiler-output',
+    ]))
+    expect(new Set(sampleSources.map((source) => source.queryClass))).toEqual(new Set([
+      'local-query',
+      'global-query',
+      'graph-query',
+    ]))
+    const fixtureClasses = new Set(sampleSources.flatMap((source) => source.fixtureClasses))
+    expect(fixtureClasses.has('local-single-source')).toBe(true)
+    expect(fixtureClasses.has('obsidian-vault')).toBe(true)
+    expect(fixtureClasses.has('llmwiki-compiler-output')).toBe(true)
+    expect(fixtureClasses.has('graph-relation')).toBe(true)
+  })
+
   for (const source of sampleSources) {
     test(`${source.id} serves through ${sampleStackLabel}`, async ({ page, request }) => {
       const sourceInfo = await loadSourceInfo(request, source)
@@ -75,6 +95,34 @@ test.describe('sample knowledge graph matrix', () => {
       if (bridgeUrl) await expectBridgeEvidenceOnly(request, source, sourceInfo)
     })
   }
+
+  test('all sample sources stay namespaced in one global chat query', async ({ page, request }) => {
+    test.skip(sampleSources.length < 2, 'requires at least two sample source endpoints')
+
+    const sourceInfos = await Promise.all(sampleSources.map((source) => loadSourceInfo(request, source)))
+    await configureAllDirectSources(page, sampleSources, sourceInfos)
+
+    const activeSources = page.getByRole('group', { name: 'Active knowledge source summary' })
+    await expect(activeSources).toContainText(`${sampleSources.length} selected · ${sampleSources.length} ready available`)
+
+    await page.getByLabel('Question').fill('What should be reviewed across these knowledge sources?')
+    await page.getByRole('button', { name: /^Ask / }).click()
+
+    const latestAssistant = page.locator('.message.assistant').last()
+    await expect(latestAssistant).toContainText('Grounded answer')
+    const trace = await expandedLocalDevelopmentTrace(page)
+    for (const sourceInfo of sourceInfos) {
+      await expect(trace.locator('li > span', { hasText: sourceInfo.title })).toBeVisible()
+    }
+    const citationCount = await latestAssistant.getByLabel('Citations').getByRole('button').count()
+    expect(citationCount, 'global query should keep at least one answer citation while each sample has separate evidence coverage').toBeGreaterThan(0)
+    expect(citationCount).toBeLessThanOrEqual(sourceInfos.reduce((total, sourceInfo) => total + sourceInfo.citationCount, 0))
+    await expect(page.getByRole('region', { name: 'Knowledge map' })).toContainText(
+      sourceInfos.map((sourceInfo) => sourceInfo.title).join(', '),
+    )
+
+    if (bridgeUrl) await expectBridgeEvidenceOnlyGlobal(request, sampleSources, sourceInfos)
+  })
 })
 
 async function expectChatSourceFlow(page: Page, source: SampleSource, sourceInfo: SourceInfo): Promise<void> {
@@ -83,7 +131,7 @@ async function expectChatSourceFlow(page: Page, source: SampleSource, sourceInfo
 
   const defaultCard = page.locator('.connection-card').first()
   await openSourceSetup(defaultCard)
-  await defaultCard.getByLabel('Sample Packaging LLMWiki URL').fill(source.url)
+  await sourceUrlInput(defaultCard).fill(source.url)
   await defaultCard.getByRole('button', { name: 'Test source' }).click()
 
   const sourceCard = connectionCard(page, sourceInfo.title)
@@ -145,6 +193,42 @@ async function expectBridgeEvidenceOnly(
   }
 }
 
+async function expectBridgeEvidenceOnlyGlobal(
+  request: APIRequestContext,
+  sources: SampleSource[],
+  sourceInfos: SourceInfo[],
+): Promise<void> {
+  const response = await request.post(joinUrl(bridgeUrl, '/message:send'), {
+    data: {
+      data: {
+        query: 'What should be reviewed across these knowledge sources?',
+        mode: 'evidence-only',
+        knowledgeSources: sources.map((source, index) => ({
+          id: source.id,
+          name: sourceInfos[index]?.title || source.name,
+          protocol: 'llmwiki-http',
+          status: 'ready',
+          selected: true,
+          url: source.url,
+        })),
+      },
+    },
+  })
+  expect(response.ok(), 'global bridge evidence-only response should be OK').toBe(true)
+  const payload = await response.json() as Record<string, unknown>
+  const artifact = extractAgentResult(payload)
+  const citationCount = readRecordArray(artifact.citations).length
+
+  expect(readString(artifact, 'orchestrationMode')).toBe('evidence-only')
+  expect(citationCount, 'global bridge query should return at least one direct evidence citation').toBeGreaterThan(0)
+  expect(citationCount).toBeLessThanOrEqual(sourceInfos.reduce((total, sourceInfo) => total + sourceInfo.citationCount, 0))
+  expect(readRecordArray(artifact.steps).some((step) => readString(step, 'id') === 'runtime-chat-completions')).toBe(false)
+  const serializedArtifact = JSON.stringify(artifact)
+  for (const sourceInfo of sourceInfos) {
+    expect(serializedArtifact).toContain(sourceInfo.title)
+  }
+}
+
 async function loadSourceInfo(request: APIRequestContext, source: SampleSource): Promise<SourceInfo> {
   const [manifestResponse, graphResponse, queryResponse] = await Promise.all([
     request.get(joinUrl(source.url, '/manifest')),
@@ -176,6 +260,34 @@ async function loadSourceInfo(request: APIRequestContext, source: SampleSource):
   }
 }
 
+async function configureAllDirectSources(page: Page, sources: SampleSource[], sourceInfos: SourceInfo[]): Promise<void> {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+
+  const defaultCard = page.locator('.connection-card').first()
+  await openSourceSetup(defaultCard)
+  await sourceUrlInput(defaultCard).fill(sources[0].url)
+  await defaultCard.getByRole('button', { name: 'Test source' }).click()
+  await expect(connectionCard(page, sourceInfos[0].title).getByLabel('Connection status ready')).toBeVisible()
+
+  for (let index = 1; index < sources.length; index += 1) {
+    await addDirectSource(page, sourceInfos[index].title, sources[index].url)
+    await expect(connectionCard(page, sourceInfos[index].title).getByLabel('Connection status ready')).toBeVisible()
+  }
+}
+
+async function addDirectSource(page: Page, name: string, url: string): Promise<void> {
+  const sourceSection = page.getByRole('region', { name: 'Knowledge sources' })
+  await openSidebarSection(sourceSection)
+  const addConnection = sourceSection.locator('.add-connection')
+  if (!(await addConnection.evaluate((node) => (node as HTMLDetailsElement).open))) {
+    await addConnection.locator('summary').click()
+  }
+  await addConnection.getByLabel('Name').fill(name)
+  await addConnection.getByLabel('New connection URL').fill(url)
+  await addConnection.getByRole('button', { name: 'Create source' }).click()
+}
+
 async function openSourceSetup(sourceCard: Locator): Promise<void> {
   const sourceSection = sourceCard.locator('xpath=ancestor::section[contains(@class, "source-section")]')
   await openSidebarSection(sourceSection)
@@ -204,6 +316,10 @@ function connectionCard(page: Page, text: string): Locator {
   return page.locator('.connection-card').filter({ hasText: text }).first()
 }
 
+function sourceUrlInput(sourceCard: Locator): Locator {
+  return sourceCard.locator('.source-setup-body input[aria-label$=" URL"]').first()
+}
+
 function extractAgentResult(payload: Record<string, unknown>): Record<string, unknown> {
   for (const artifact of readRecordArray(payload.artifacts)) {
     if (readString(artifact, 'name') !== 'llmwiki_agent_result') continue
@@ -227,6 +343,8 @@ function parseSampleSources(value: string | undefined): SampleSource[] {
       id: readString(record, 'id') || `source-${index + 1}`,
       name: readString(record, 'name') || `Source ${index + 1}`,
       query: readString(record, 'query') || 'What is in this wiki?',
+      queryClass: readString(record, 'queryClass') || 'unspecified-query',
+      fixtureClasses: readStringArray(record.fixtureClasses),
       url,
     }
   })
