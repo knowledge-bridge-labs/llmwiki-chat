@@ -18,6 +18,7 @@ import { clientFor, diagnosticFromError } from './serveClient'
 import type {
   AgentConnection,
   AgentProtocol,
+  AgentRuntimeMessage,
   AgentStep,
   ChatMessage,
   Citation,
@@ -70,6 +71,7 @@ const starterConnections: Connection[] = [
 
 const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
 const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
+const runtimeConversationMessageLimit = 12
 
 type RuntimeStatus = AgentConnection['status'] | 'running'
 type BridgeKnowledgeSourceSnapshot = Awaited<ReturnType<typeof discoverBridgeKnowledgeSources>>[number]
@@ -122,10 +124,39 @@ interface AnswerScopeSnapshot {
   sources: ScopeSourceSnapshot[]
 }
 
+interface TurnAuditMetadata {
+  turnId: string
+  runtimeMode: string
+  runtimeProtocol: AgentConnection['protocol']
+  selectedSourceCount: number
+  readySourceCount: number
+  usedSourceCount: number
+  startedAt: string
+  completedAt?: string
+  durationMs?: number
+  status: RuntimeStatus
+  citationCount: number
+  graphNodeCount: number
+  graphEdgeCount: number
+  stepCount: number
+  toolCallCount: number
+  requestId?: string
+  traceId?: string
+}
+
+interface DebugTranscriptEntry {
+  id: string
+  turnId: string
+  userPrompt: string
+  assistantAnswer: string
+  status: 'running' | 'completed' | 'error'
+}
+
 type UiChatMessage = ChatMessage & {
   agentName?: string
   agentRuntimeStatus?: RuntimeStatus
   answerScope?: AnswerScopeSnapshot
+  turnAudit?: TurnAuditMetadata
   citationReferenceIds?: string[]
   evidenceGraph?: RuntimeGraphState
   toolCalls?: AgentToolCallTrace[]
@@ -563,6 +594,8 @@ export default function App() {
   const [runGraph, setRunGraph] = useState<RuntimeGraphState | null>(null)
   const [graphMode, setGraphMode] = useState<GraphMode>('selection')
   const [pageReadCache, setPageReadCache] = useState<Record<string, PageReadCacheEntry>>({})
+  const [debugTranscriptEnabled, setDebugTranscriptEnabled] = useState(false)
+  const [debugTranscript, setDebugTranscript] = useState<DebugTranscriptEntry[]>([])
   const threadRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const questionRef = useRef<HTMLTextAreaElement>(null)
@@ -573,6 +606,9 @@ export default function App() {
   const sourceDiscoveryRequests = useRef(new Map<string, SourceDiscoveryRequest>())
   const runtimeDiscoveryRequests = useRef(new Map<string, RuntimeDiscoveryRequest>())
   const pageReadRequests = useRef(new Set<string>())
+  const sessionIdRef = useRef(createId())
+  const threadIdRef = useRef(createId())
+  const debugTranscriptEnabledRef = useRef(false)
   const initialConnections = useRef<Connection[] | null>(null)
   const initialAgents = useRef<AgentConnection[] | null>(null)
   if (initialConnections.current === null) initialConnections.current = connections
@@ -580,6 +616,16 @@ export default function App() {
 
   const abortActiveRun = useCallback(() => {
     activeRunController.current?.abort()
+  }, [])
+
+  const setDebugTranscriptCollection = useCallback((enabled: boolean) => {
+    debugTranscriptEnabledRef.current = enabled
+    setDebugTranscriptEnabled(enabled)
+    if (!enabled) setDebugTranscript([])
+  }, [])
+
+  const clearDebugTranscript = useCallback(() => {
+    setDebugTranscript([])
   }, [])
 
   const abortActiveRunForScopeChange = useCallback((nextAgents: AgentConnection[], nextConnections: Connection[]) => {
@@ -938,8 +984,10 @@ export default function App() {
 
   const resetChat = useCallback(() => {
     abortActiveRun()
+    threadIdRef.current = createId()
     pendingAssistantScrollId.current = null
     setMessages([])
+    setDebugTranscript([])
     setQuery('')
     setBusy(false)
     setRunGraph(null)
@@ -970,7 +1018,14 @@ export default function App() {
     activeRunController.current?.abort()
     const runController = new AbortController()
     activeRunController.current = runController
+    const userMessageId = createId()
     const assistantId = createId()
+    const turnId = createId()
+    const threadId = threadIdRef.current
+    const sessionId = sessionIdRef.current
+    const runtimeMessages = runtimeConversationMessages(messages, clean)
+    const captureDebugTranscript = debugTranscriptEnabledRef.current
+    const startedAt = new Date().toISOString()
     const initialEvidenceGraph: RuntimeGraphState = {
       messageId: assistantId,
       sourceKey,
@@ -988,7 +1043,7 @@ export default function App() {
     setRunGraph(initialEvidenceGraph)
     setMessages((items) => [
       ...items,
-      { id: createId(), role: 'user', text: clean, citations: [] },
+      { id: userMessageId, role: 'user', text: clean, citations: [] },
       {
         id: assistantId,
         role: 'assistant',
@@ -998,13 +1053,31 @@ export default function App() {
         agentName: agent.name,
         agentRuntimeStatus: 'running',
         answerScope: createAnswerScopeSnapshot(agent, selectedConnections, knowledgeSources, 'running'),
+        turnAudit: createTurnAuditMetadata(turnId, agent, selectedConnections, knowledgeSources, sourceGraph, startedAt),
         evidenceGraph: initialEvidenceGraph,
         toolCalls: [],
       },
     ])
+    if (captureDebugTranscript) {
+      setDebugTranscript((items) => [
+        ...items,
+        {
+          id: createId(),
+          turnId,
+          userPrompt: clean,
+          assistantAnswer: '',
+          status: 'running',
+        },
+      ])
+    }
 
     const updateAssistant = (updater: (message: UiChatMessage) => UiChatMessage) => {
       setMessages((items) => items.map((item) => (item.id === assistantId ? updater(item) : item)))
+    }
+
+    const updateDebugTranscript = (updater: (entry: DebugTranscriptEntry) => DebugTranscriptEntry) => {
+      if (!debugTranscriptEnabledRef.current) return
+      setDebugTranscript((items) => items.map((item) => (item.turnId === turnId ? updater(item) : item)))
     }
 
     let completed = false
@@ -1013,6 +1086,11 @@ export default function App() {
         agent,
         knowledgeSources,
         query: clean,
+        messages: runtimeMessages,
+        messageId: userMessageId,
+        threadId,
+        sessionId,
+        turnId,
         signal: runController.signal,
       })) {
         if ('step' in event) {
@@ -1077,6 +1155,10 @@ export default function App() {
 
         if (event.type === 'answer_delta') {
           updateAssistant((message) => ({ ...message, text: `${message.text}${event.delta}` }))
+          updateDebugTranscript((entry) => ({
+            ...entry,
+            assistantAnswer: `${entry.assistantAnswer}${event.delta}`,
+          }))
         }
 
         if (event.type === 'error') {
@@ -1090,6 +1172,7 @@ export default function App() {
         if (event.type === 'run_completed') {
           completed = true
           const finalRuntimeStatus: RuntimeStatus = event.result.steps.some((step) => step.status === 'error') ? 'error' : 'ready'
+          const completedAt = new Date().toISOString()
           const completedEvidenceGraph = updateEvidenceGraphState(
             initialEvidenceGraph,
             assistantId,
@@ -1108,9 +1191,15 @@ export default function App() {
             event.result.steps,
           )
           const firstCitation = orderedResult.citations[0] || null
+          const toolCalls = renderToolCallsFromSteps(knowledgeSources, event.result.steps, orderedResult.citations)
           setSelectedCitation(firstCitation)
           setSelectedCitationReturnTarget(null)
           setSelectedNodeId(firstCitation ? graphNodeIdForCitation(firstCitation, completedEvidenceGraph.graph) : '')
+          updateDebugTranscript((entry) => ({
+            ...entry,
+            assistantAnswer: orderedResult.answer,
+            status: finalRuntimeStatus === 'error' ? 'error' : 'completed',
+          }))
           updateAssistant((message) => ({
             ...message,
             text: orderedResult.answer,
@@ -1119,6 +1208,16 @@ export default function App() {
             steps: event.result.steps,
             agentRuntimeStatus: finalRuntimeStatus,
             answerScope: updateAnswerScopeRuntimeStatus(message.answerScope, finalRuntimeStatus),
+            turnAudit: completeTurnAuditMetadata(
+              message.turnAudit,
+              sourceSnapshots,
+              finalRuntimeStatus,
+              completedAt,
+              orderedResult.citations,
+              completedEvidenceGraph.graph,
+              event.result.steps,
+              toolCalls,
+            ),
             evidenceGraph: updateEvidenceGraphState(
               message.evidenceGraph,
               assistantId,
@@ -1128,7 +1227,7 @@ export default function App() {
               sourceGraph,
               event.result.graph,
             ),
-            toolCalls: renderToolCallsFromSteps(knowledgeSources, event.result.steps, orderedResult.citations),
+            toolCalls,
           }))
         }
       }
@@ -1137,10 +1236,17 @@ export default function App() {
       const message = error instanceof Error ? error.message : String(error)
       const canceled = isCanceledRunError(error)
       const diagnostic = diagnosticFromError(error)
-      updateAssistant((item) => ({
-        ...item,
-        text: item.text || (canceled ? 'Canceled because the selected scope changed. Ask again when the intended sources and runtime are selected.' : `Agent run failed: ${message}`),
-        steps: upsertStep(item.steps || [], {
+      const completedAt = new Date().toISOString()
+      const assistantFailure = canceled
+        ? 'Canceled because the selected scope changed. Ask again when the intended sources and runtime are selected.'
+        : `Agent run failed: ${message}`
+      updateDebugTranscript((entry) => ({
+        ...entry,
+        assistantAnswer: entry.assistantAnswer || assistantFailure,
+        status: 'error',
+      }))
+      updateAssistant((item) => {
+        const nextSteps = upsertStep(item.steps || [], {
           id: canceled ? 'agent-canceled' : 'agent-error',
           label: canceled ? `Cancel ${agent.name}` : `Run ${agent.name}`,
           status: 'error',
@@ -1148,21 +1254,37 @@ export default function App() {
           timestamp: new Date().toISOString(),
           runtimeId: agent.id,
           diagnostic,
-        }),
-        agentRuntimeStatus: 'error',
-        answerScope: updateAnswerScopeRuntimeStatus(item.answerScope, 'error'),
-        toolCalls: item.toolCalls?.length
+        })
+        const nextToolCalls: AgentToolCallTrace[] = item.toolCalls?.length
           ? item.toolCalls.map((call) => (call.status === 'running' ? { ...call, status: 'error' as const } : call))
           : knowledgeSources.map((connection) => ({
-              id: connection.id,
-              sourceName: connection.name,
-              sourceProtocol: connection.protocol,
-              status: 'error',
-              detail: canceled
-                ? 'The agent run was canceled before this source returned evidence.'
-                : 'The agent run stopped before this source returned evidence.',
-            })),
-      }))
+            id: connection.id,
+            sourceName: connection.name,
+            sourceProtocol: connection.protocol,
+            status: 'error' as const,
+            detail: canceled
+              ? 'The agent run was canceled before this source returned evidence.'
+              : 'The agent run stopped before this source returned evidence.',
+          }))
+        return {
+          ...item,
+          text: item.text || assistantFailure,
+          steps: nextSteps,
+          agentRuntimeStatus: 'error' as const,
+          answerScope: updateAnswerScopeRuntimeStatus(item.answerScope, 'error'),
+          turnAudit: completeTurnAuditMetadata(
+            item.turnAudit,
+            sourceSnapshots,
+            'error',
+            completedAt,
+            item.citations,
+            item.evidenceGraph?.graph || sourceGraph,
+            nextSteps,
+            nextToolCalls,
+          ),
+          toolCalls: nextToolCalls,
+        }
+      })
     } finally {
       if (activeRunController.current === runController) {
         activeRunController.current = null
@@ -1240,6 +1362,7 @@ export default function App() {
                     scope={message.answerScope}
                     agentName={message.agentName || message.answerScope.runtime.name}
                     runtimeStatus={message.agentRuntimeStatus || message.answerScope.runtime.status}
+                    turnAudit={message.turnAudit}
                     steps={message.steps || []}
                     toolCalls={message.toolCalls || []}
                   />
@@ -1247,6 +1370,7 @@ export default function App() {
                   <AnswerRunDetails
                     agentName={message.agentName}
                     runtimeStatus={message.agentRuntimeStatus || 'ready'}
+                    turnAudit={message.turnAudit}
                     steps={message.steps || []}
                     toolCalls={message.toolCalls || []}
                   />
@@ -1322,36 +1446,44 @@ export default function App() {
             </div>
           )}
         </div>
-        <form
-          className="composer"
-          ref={composerRef}
-          onSubmit={(event) => {
-            event.preventDefault()
-            void ask()
-          }}
-        >
-          <label htmlFor="query">Question</label>
-          <textarea
-            id="query"
-            ref={questionRef}
-            value={query}
-            aria-describedby="ask-status"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                void ask()
-              }
+        <div className="chat-footer">
+          <form
+            className="composer"
+            ref={composerRef}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void ask()
             }}
-            rows={3}
+          >
+            <label htmlFor="query">Question</label>
+            <textarea
+              id="query"
+              ref={questionRef}
+              value={query}
+              aria-describedby="ask-status"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void ask()
+                }
+              }}
+              rows={3}
+            />
+            <button type="submit" disabled={!canAsk} aria-describedby="ask-status">
+              {askButtonLabel(busy, selectedConnections)}
+            </button>
+            <p id="ask-status" className={`ask-status ${askStatusTone}`} aria-live="polite">
+              {askStatusMessage}
+            </p>
+          </form>
+          <DebugTranscriptPanel
+            enabled={debugTranscriptEnabled}
+            entries={debugTranscript}
+            onToggle={setDebugTranscriptCollection}
+            onClear={clearDebugTranscript}
           />
-          <button type="submit" disabled={!canAsk} aria-describedby="ask-status">
-            {askButtonLabel(busy, selectedConnections)}
-          </button>
-          <p id="ask-status" className={`ask-status ${askStatusTone}`} aria-live="polite">
-            {askStatusMessage}
-          </p>
-        </form>
+        </div>
       </section>
       <aside className="inspector" aria-label="Knowledge graph and details" ref={inspectorRef}>
         <KnowledgeMapSummary
@@ -1418,6 +1550,70 @@ export default function App() {
         />
       </aside>
     </main>
+  )
+}
+
+function DebugTranscriptPanel({
+  enabled,
+  entries,
+  onToggle,
+  onClear,
+}: {
+  enabled: boolean
+  entries: DebugTranscriptEntry[]
+  onToggle: (enabled: boolean) => void
+  onClear: () => void
+}) {
+  return (
+    <section className="debug-transcript-controls" aria-label="Debug transcript controls">
+      <label className="debug-transcript-toggle">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+        <span>Raw debug transcript</span>
+      </label>
+      <p>
+        Off by default. When enabled, raw prompts and assistant answers stay in current-tab memory only.
+        The redacted turn audit remains separate.
+      </p>
+      {enabled ? (
+        <div className="debug-transcript-panel" role="region" aria-label="Raw debug transcript">
+          <div className="debug-transcript-panel-header">
+            <strong>Raw debug transcript</strong>
+            <button type="button" onClick={onClear} disabled={!entries.length}>
+              Clear debug transcript
+            </button>
+          </div>
+          {entries.length ? (
+            <ol>
+              {entries.map((entry) => (
+                <li key={entry.id}>
+                  <div className={`debug-transcript-status ${entry.status}`}>{entry.status}</div>
+                  <dl>
+                    <div>
+                      <dt>Turn ID</dt>
+                      <dd>{entry.turnId}</dd>
+                    </div>
+                    <div>
+                      <dt>Raw user prompt</dt>
+                      <dd>{entry.userPrompt}</dd>
+                    </div>
+                    <div>
+                      <dt>Raw assistant answer</dt>
+                      <dd>{entry.assistantAnswer || 'Waiting for assistant answer...'}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>No raw transcript entries collected for this tab.</p>
+          )}
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -2647,12 +2843,14 @@ function AnswerRunDetails({
   scope,
   agentName,
   runtimeStatus,
+  turnAudit,
   steps,
   toolCalls,
 }: {
   scope?: AnswerScopeSnapshot
   agentName: string
   runtimeStatus: RuntimeStatus
+  turnAudit?: TurnAuditMetadata
   steps: AgentStep[]
   toolCalls: AgentToolCallTrace[]
 }) {
@@ -2696,6 +2894,7 @@ function AnswerRunDetails({
             </div>
           </section>
         ) : null}
+        {turnAudit ? <TurnAuditDetails audit={turnAudit} /> : null}
         {hasTraceDetails ? (
           <section className="run-detail-section" aria-label="Agent trace">
             <strong>Agent trace</strong>
@@ -2731,6 +2930,71 @@ function AnswerRunDetails({
         )}
       </div>
     </details>
+  )
+}
+
+function TurnAuditDetails({ audit }: { audit: TurnAuditMetadata }) {
+  return (
+    <section className="run-detail-section turn-audit" aria-label="Turn audit">
+      <strong>Turn audit</strong>
+      <p>In-memory redacted client summary. It does not include prompts, answers, endpoint URLs, or tokens.</p>
+      <dl className="turn-audit-grid">
+        <div>
+          <dt>Turn ID</dt>
+          <dd>{audit.turnId}</dd>
+        </div>
+        <div>
+          <dt>Runtime mode</dt>
+          <dd>{audit.runtimeMode || 'n/a'}</dd>
+        </div>
+        <div>
+          <dt>Runtime protocol</dt>
+          <dd>{audit.runtimeProtocol}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{audit.status}</dd>
+        </div>
+        <div>
+          <dt>Sources</dt>
+          <dd>{audit.selectedSourceCount} selected · {audit.readySourceCount} ready · {audit.usedSourceCount} used</dd>
+        </div>
+        <div>
+          <dt>Started</dt>
+          <dd>{audit.startedAt}</dd>
+        </div>
+        {audit.completedAt ? (
+          <div>
+            <dt>Completed</dt>
+            <dd>{audit.completedAt}</dd>
+          </div>
+        ) : null}
+        {audit.durationMs !== undefined ? (
+          <div>
+            <dt>Duration</dt>
+            <dd>{audit.durationMs}ms</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Counts</dt>
+          <dd>
+            citations {audit.citationCount} · graph nodes {audit.graphNodeCount} · graph edges {audit.graphEdgeCount} · steps {audit.stepCount} · tool calls {audit.toolCallCount}
+          </dd>
+        </div>
+        {audit.requestId ? (
+          <div>
+            <dt>Request ID</dt>
+            <dd>{audit.requestId}</dd>
+          </div>
+        ) : null}
+        {audit.traceId ? (
+          <div>
+            <dt>Trace ID</dt>
+            <dd>{audit.traceId}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </section>
   )
 }
 
@@ -3946,6 +4210,134 @@ function createAnswerScopeSnapshot(
     usedSourceCount: usedSources.length,
     sources: usedSources.map(sourceScopeSnapshot),
   }
+}
+
+function runtimeConversationMessages(messages: UiChatMessage[], latestUserTurn: string): AgentRuntimeMessage[] {
+  const priorMessages = messages
+    .map(runtimeConversationMessage)
+    .filter((message): message is AgentRuntimeMessage => Boolean(message))
+  const combined: AgentRuntimeMessage[] = [
+    ...priorMessages,
+    { role: 'user', content: latestUserTurn.trim() },
+  ]
+  return combined.filter((message) => message.content).slice(-runtimeConversationMessageLimit)
+}
+
+function runtimeConversationMessage(message: UiChatMessage): AgentRuntimeMessage | null {
+  const content = message.text.trim()
+  if (!content) return null
+  return { role: message.role, content }
+}
+
+function createTurnAuditMetadata(
+  turnId: string,
+  agent: AgentConnection,
+  selectedSources: Connection[],
+  readySources: Connection[],
+  graph: KnowledgeGraph,
+  startedAt: string,
+): TurnAuditMetadata {
+  return {
+    turnId,
+    runtimeMode: runtimeModeLabel(agent),
+    runtimeProtocol: agent.protocol,
+    selectedSourceCount: selectedSources.length,
+    readySourceCount: readySources.length,
+    usedSourceCount: 0,
+    startedAt,
+    status: 'running',
+    citationCount: 0,
+    graphNodeCount: graph.nodes.length,
+    graphEdgeCount: graph.edges.length,
+    stepCount: 0,
+    toolCallCount: 0,
+  }
+}
+
+function completeTurnAuditMetadata(
+  audit: TurnAuditMetadata | undefined,
+  sources: ScopeSourceSnapshot[],
+  status: RuntimeStatus,
+  completedAt: string,
+  citations: Citation[],
+  graph: KnowledgeGraph,
+  steps: AgentStep[],
+  toolCalls: AgentToolCallTrace[],
+): TurnAuditMetadata | undefined {
+  if (!audit) return undefined
+  const ids = safeTurnAuditIds(steps)
+  return {
+    ...audit,
+    completedAt,
+    durationMs: turnAuditDurationMs(audit.startedAt, completedAt),
+    status,
+    citationCount: citations.length,
+    graphNodeCount: graph.nodes.length,
+    graphEdgeCount: graph.edges.length,
+    stepCount: steps.length,
+    toolCallCount: turnAuditToolCallCount(steps, toolCalls),
+    usedSourceCount: turnAuditUsedSourceCount(sources, steps, citations, toolCalls),
+    ...(ids.requestId ? { requestId: ids.requestId } : {}),
+    ...(ids.traceId ? { traceId: ids.traceId } : {}),
+  }
+}
+
+function turnAuditDurationMs(startedAt: string, completedAt: string): number | undefined {
+  const started = Date.parse(startedAt)
+  const completed = Date.parse(completedAt)
+  if (!Number.isFinite(started) || !Number.isFinite(completed)) return undefined
+  return Math.max(0, completed - started)
+}
+
+function turnAuditToolCallCount(steps: AgentStep[], toolCalls: AgentToolCallTrace[]): number {
+  return toolCalls.length || steps.filter((step) => Boolean(step.toolName)).length
+}
+
+function turnAuditUsedSourceCount(
+  sources: ScopeSourceSnapshot[],
+  steps: AgentStep[],
+  citations: Citation[],
+  toolCalls: AgentToolCallTrace[],
+): number {
+  const readySourceIds = new Set(sources.map((source) => source.id))
+  const usedIds = new Set<string>()
+  steps.forEach((step) => {
+    if (step.connectionId && readySourceIds.has(step.connectionId)) usedIds.add(step.connectionId)
+  })
+  citations.forEach((citation) => {
+    if (citation.connectionId && readySourceIds.has(citation.connectionId)) usedIds.add(citation.connectionId)
+  })
+  toolCalls.forEach((call) => {
+    if (readySourceIds.has(call.id)) usedIds.add(call.id)
+  })
+  return usedIds.size
+}
+
+function safeTurnAuditIds(steps: AgentStep[]): { requestId?: string; traceId?: string } {
+  return {
+    requestId: firstSafeAuditId(steps.flatMap((step) => [
+      step.requestId,
+      step.diagnostic?.requestId,
+    ])),
+    traceId: firstSafeAuditId(steps.flatMap((step) => [
+      step.traceId,
+      step.diagnostic?.traceId,
+    ])),
+  }
+}
+
+function firstSafeAuditId(values: Array<string | undefined>): string | undefined {
+  return values.map(safeAuditId).find(Boolean)
+}
+
+function safeAuditId(value: string | undefined): string | undefined {
+  const clean = value?.trim()
+  if (!clean) return undefined
+  if (clean.length > 128) return undefined
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(clean)) return undefined
+  if (/^(?:https?|wss?):/i.test(clean)) return undefined
+  if (/(?:bearer|token|secret|password|sk-[A-Za-z0-9_-]|sk-proj-[A-Za-z0-9_-])/i.test(clean)) return undefined
+  return clean
 }
 
 function updateAnswerScopeRuntimeStatus(

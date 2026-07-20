@@ -9,6 +9,8 @@ import {
 import type {
   AgentConnection,
   AgentProtocol,
+  AgentRuntimeA2aTextMessage,
+  AgentRuntimeMessage,
   AgentStep,
   Citation,
   Connection,
@@ -25,11 +27,18 @@ const EXTERNAL_A2A_RUNTIME_MESSAGE_TIMEOUT_MS = 120_000
 const BRIDGE_MCP_DISCOVERY_TIMEOUT_MS = 10_000
 const BRIDGE_MCP_RUNTIME_TOOL_TIMEOUT_MS = 120_000
 const LOCAL_AGENT_BRIDGE_URL = 'http://127.0.0.1:8788'
+const AGENT_RUNTIME_MESSAGE_LIMIT = 16
+const CONVERSATION_SCHEMA_VERSION = 'llmwiki-chat.conversation.v1'
 
 export interface AgentRunRequest {
   agent: AgentConnection
   knowledgeSources: Connection[]
   query: string
+  messages?: AgentRuntimeMessage[]
+  messageId?: string
+  threadId?: string
+  sessionId?: string
+  turnId?: string
   signal?: AbortSignal
 }
 
@@ -957,12 +966,87 @@ async function postExternalA2aRuntimeMessage(
 }
 
 function agentRunArguments(request: AgentRunRequest, usableSources: Connection[]): Record<string, unknown> {
+  const messages = agentRuntimeMessages(request)
+  const conversation = runtimeConversationDescriptor(request, messages)
+  const message = agentRuntimeA2aMessage(request)
   return {
     query: request.query,
-    runtimeContext: runtimeContextDescriptor(request, usableSources),
+    ...(message ? { message } : {}),
+    messages,
+    ...(request.threadId ? { threadId: request.threadId } : {}),
+    ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+    ...(request.turnId ? { turnId: request.turnId } : {}),
+    runtimeContext: runtimeContextDescriptor(request, usableSources, conversation),
     knowledgeSources: usableSources.map(knowledgeSourceDescriptor),
     tools: usableSources.map(runtimeToolDescriptor),
   }
+}
+
+function agentRuntimeA2aMessage(request: AgentRunRequest): AgentRuntimeA2aTextMessage | null {
+  const text = request.query.trim()
+  const messageId = safeRuntimeIdentifier(request.messageId || request.turnId || '')
+  if (!text || !messageId) return null
+  const threadId = safeRuntimeIdentifier(request.threadId || '')
+  const sessionId = safeRuntimeIdentifier(request.sessionId || '')
+  const turnId = safeRuntimeIdentifier(request.turnId || '')
+  const llmwiki = compactRuntimeRecord({
+    schemaVersion: CONVERSATION_SCHEMA_VERSION,
+    ...(threadId ? { threadId } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(turnId ? { turnId } : {}),
+  })
+  return compactRuntimeRecord({
+    kind: 'message',
+    messageId,
+    ...(threadId ? { contextId: threadId } : {}),
+    role: 'user',
+    parts: [{ kind: 'text', text }],
+    metadata: { llmwiki },
+  }) as unknown as AgentRuntimeA2aTextMessage
+}
+
+function agentRuntimeMessages(request: AgentRunRequest): AgentRuntimeMessage[] {
+  const messages = (request.messages || [])
+    .map(normalizeAgentRuntimeMessage)
+    .filter((message): message is AgentRuntimeMessage => Boolean(message))
+  const query = request.query.trim()
+  const latest = messages[messages.length - 1]
+  if (query && (!latest || latest.role !== 'user' || latest.content !== query)) {
+    messages.push({ role: 'user', content: query })
+  }
+  return messages.slice(-AGENT_RUNTIME_MESSAGE_LIMIT)
+}
+
+function normalizeAgentRuntimeMessage(message: AgentRuntimeMessage): AgentRuntimeMessage | null {
+  if (message.role !== 'user' && message.role !== 'assistant') return null
+  const content = message.content.trim()
+  return content ? { role: message.role, content } : null
+}
+
+function runtimeConversationDescriptor(
+  request: AgentRunRequest,
+  messages: AgentRuntimeMessage[],
+): Record<string, unknown> {
+  const latestRole = messages[messages.length - 1]?.role
+  return {
+    schemaVersion: CONVERSATION_SCHEMA_VERSION,
+    ...(request.threadId ? { threadId: request.threadId } : {}),
+    ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+    ...(request.turnId ? { turnId: request.turnId } : {}),
+    historyLength: Math.max(0, messages.length - (latestRole ? 1 : 0)),
+    messagesIncluded: messages.length,
+    ...(latestRole ? { latestRole } : {}),
+  }
+}
+
+function safeRuntimeIdentifier(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128)
+}
+
+function compactRuntimeRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined && value !== ''),
+  )
 }
 
 function agentRuntimeAuthHeaders(agent: AgentConnection): Record<string, string> {
@@ -1226,11 +1310,16 @@ function knowledgeSourceDescriptor(source: Connection): Record<string, unknown> 
   }
 }
 
-function runtimeContextDescriptor(request: AgentRunRequest, sources: Connection[]): Record<string, unknown> {
+function runtimeContextDescriptor(
+  request: AgentRunRequest,
+  sources: Connection[],
+  conversation: Record<string, unknown>,
+): Record<string, unknown> {
   return {
     application: 'llmwiki-chat',
     clientRole: 'ui-session-connection-trace-console',
     runtimeRole: 'external-agent-runtime',
+    conversation,
     selectedRuntime: {
       id: request.agent.id,
       name: request.agent.name,
@@ -1386,6 +1475,8 @@ function normalizeRuntimeSteps(value: unknown, runtimeId: string): AgentStep[] {
       connectionId: readString(item, 'connectionId') || readString(item, 'connection_id'),
       citationIds: readStringArray(item.citationIds ?? item.citation_ids),
       latencyMs: readNumber(item, 'latencyMs') ?? readNumber(item, 'latency_ms'),
+      requestId: readString(item, 'requestId') || readString(item, 'request_id'),
+      traceId: readString(item, 'traceId') || readString(item, 'trace_id'),
       error,
       diagnostic: runtimeStepDiagnostic(item),
       parentId: readString(item, 'parentId') || readString(item, 'parent_id'),
@@ -1425,6 +1516,7 @@ function runtimeStepDiagnostic(item: Record<string, unknown>): Diagnostic | unde
     || normalizeDiagnosticEnvelope({
       observations: item.observations ?? item.observation,
       remediation: item.remediation ?? item.remediations,
+      requestId: item.requestId ?? item.request_id,
       traceId: item.traceId ?? item.trace_id,
       partial: item.partial,
     })
@@ -1436,6 +1528,7 @@ function runtimePayloadDiagnostic(payload: Record<string, unknown>): Diagnostic 
     || normalizeDiagnosticEnvelope({
       observations: payload.observations ?? payload.observation,
       remediation: payload.remediation ?? payload.remediations,
+      requestId: payload.requestId ?? payload.request_id,
       traceId: payload.traceId ?? payload.trace_id,
       partial: payload.partial,
     })

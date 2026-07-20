@@ -31,6 +31,7 @@ export interface Diagnostic {
   detail?: string
   observations?: string[]
   remediation?: string[]
+  requestId?: string
   traceId?: string
   type?: string
   instance?: string
@@ -111,9 +112,28 @@ export interface AgentStep {
   connectionId?: string
   citationIds?: string[]
   latencyMs?: number
+  requestId?: string
+  traceId?: string
   error?: string
   diagnostic?: Diagnostic
   parentId?: string
+}
+
+export interface AgentRuntimeMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AgentRuntimeA2aTextMessage {
+  kind: 'message'
+  messageId: string
+  contextId?: string
+  role: 'user'
+  parts: Array<{
+    kind: 'text'
+    text: string
+  }>
+  metadata?: Record<string, unknown>
 }
 
 export interface ChatMessage {

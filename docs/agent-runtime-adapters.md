@@ -105,9 +105,20 @@ Runtime invocation:
 - `POST message:send`
 - includes `Authorization: Bearer ...` when the runtime setup token is set
 - request body contains `data.query`
+- request body contains `data.message` in A2A `Message` shape with
+  `kind: "message"`, `role: "user"`, `messageId`, optional `contextId`, text
+  parts, and `metadata.llmwiki` thread/session/turn identifiers
+- request body also contains bounded `data.messages` in OpenAI/LangChain-style
+  `{ "role": "user" | "assistant", "content": "..." }` order, including the
+  latest user turn
+- request body includes current-tab conversation IDs such as `data.threadId`,
+  `data.sessionId`, and `data.turnId` when available
 - request body contains `data.runtimeContext`, describing that `llmwiki-chat`
   owns UI, session flow, connections, and trace display while the runtime owns
   reasoning, tool-use planning, and answer composition
+- `data.runtimeContext.conversation` is a safe descriptor with schema version,
+  thread/session/turn IDs, included message count, prior history length, and
+  latest role
 - request body contains `data.knowledgeSources`
 - request body contains `data.tools`, one callable tool description per selected
   ready Knowledge Source
@@ -237,10 +248,27 @@ Example request body:
 {
   "data": {
     "query": "What needs review?",
+    "messages": [
+      { "role": "user", "content": "What changed yesterday?" },
+      { "role": "assistant", "content": "The release checklist changed." },
+      { "role": "user", "content": "What needs review?" }
+    ],
+    "threadId": "thread_abc",
+    "sessionId": "session_abc",
+    "turnId": "turn_abc",
     "runtimeContext": {
       "application": "llmwiki-chat",
       "clientRole": "ui-session-connection-trace-console",
       "runtimeRole": "external-agent-runtime",
+      "conversation": {
+        "schemaVersion": "llmwiki-chat.conversation.v1",
+        "threadId": "thread_abc",
+        "sessionId": "session_abc",
+        "turnId": "turn_abc",
+        "historyLength": 2,
+        "messagesIncluded": 3,
+        "latestRole": "user"
+      },
       "selectedRuntime": {
         "id": "custom-a2a",
         "name": "Custom A2A",
@@ -341,6 +369,22 @@ runtime omits `llmwiki_agent_result`, the client uses the A2A message text as an
 uncited fallback answer and records an `Unstructured runtime response` status
 step. A2A error objects and failed, canceled, cancelled, or rejected task states
 are surfaced as runtime errors in the chat trace.
+
+Each assistant message also keeps a current-tab, in-memory, redacted turn audit
+for UI review. The audit records safe metadata such as runtime mode/protocol,
+selected/ready/observed-used source counts, timestamps or duration, final
+status, citation/graph/step/tool-call counts, and safe request or trace IDs when
+the bridge or runtime returns them. It does not include prompts, answers,
+bearer tokens, endpoint URLs, source URLs, or provider/model secrets, and it is
+not saved to localStorage/sessionStorage by default. Server-side proof of bridge/runtime and
+source calls belongs in `llmwiki-agent-bridge` audit logs.
+
+Raw debug transcript logging is separate from the redacted turn audit. It is off
+by default and requires the explicit `Raw debug transcript` UI toggle. When
+enabled, the browser displays raw user prompts and assistant answers from the
+current tab's React memory only. It must not write raw transcript text to
+localStorage, sessionStorage, or a server; disabling the toggle clears collected
+entries, and chat reset also clears them.
 
 For best evidence ordering, each runtime step that read citations should include
 `citation_ids` or `citationIds` in the order the runtime used those citations.
