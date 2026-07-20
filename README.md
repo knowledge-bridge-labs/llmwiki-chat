@@ -23,8 +23,8 @@ provides the browser inspection and review surface.
 
 [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Runtime adapters](docs/agent-runtime-adapters.md) | [Release checklist](docs/release.md) | [Docs portal](https://knowledge-bridge-labs.github.io/llmwiki-docs/) | [Quickstart docs](https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart) | [Release status](https://knowledge-bridge-labs.github.io/llmwiki-docs/status) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Support](SUPPORT.md) | [Changelog](CHANGELOG.md)
 
-> Public-preview note: source-checkout usage is the supported first-run path.
-> Package-install commands apply after the first npm release is published.
+> Public-preview note: npm install is available for `llmwiki-chat@0.1.0`.
+> Source checkout remains supported for local development and release checks.
 
 It is not a model server, hosted RAG app, wiki compiler, ingestion pipeline,
 vector database, crawler, credential store, or production runtime host.
