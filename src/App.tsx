@@ -13,11 +13,18 @@ import {
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import { agentClientFor, discoverAgentRuntime, discoverBridgeKnowledgeSources, starterAgentConnections } from './agents'
+import {
+  agentClientFor,
+  discoverAgentRuntime,
+  discoverBridgeKnowledgeSources,
+  starterAgentConnections,
+  type AgentRuntimeRequestLog,
+} from './agents'
 import { clientFor, diagnosticFromError } from './serveClient'
 import type {
   AgentConnection,
   AgentProtocol,
+  AgentRuntimeMessage,
   AgentStep,
   ChatMessage,
   Citation,
@@ -28,6 +35,16 @@ import type {
   Protocol,
 } from './domain'
 import { emptyGraph, mergeGraphs, namespaceGraph } from './graph'
+import {
+  clearLocalIoLogEntries,
+  loadLocalIoLogEntries,
+  loadLocalIoLoggingEnabled,
+  localIoLogJsonl,
+  localIoLogSchemaVersion,
+  persistLocalIoLoggingEnabled,
+  storeLocalIoLogEntries,
+  type LocalIoLogEntry,
+} from './localIoLog'
 import { isReachablePublicHttpsSourceUrl } from './urlPolicy'
 import './styles.css'
 
@@ -70,6 +87,7 @@ const starterConnections: Connection[] = [
 
 const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
 const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
+const runtimeConversationMessageLimit = 12
 
 type RuntimeStatus = AgentConnection['status'] | 'running'
 type BridgeKnowledgeSourceSnapshot = Awaited<ReturnType<typeof discoverBridgeKnowledgeSources>>[number]
@@ -122,10 +140,31 @@ interface AnswerScopeSnapshot {
   sources: ScopeSourceSnapshot[]
 }
 
+interface TurnAuditMetadata {
+  turnId: string
+  runtimeMode: string
+  runtimeProtocol: AgentConnection['protocol']
+  selectedSourceCount: number
+  readySourceCount: number
+  usedSourceCount: number
+  startedAt: string
+  completedAt?: string
+  durationMs?: number
+  status: RuntimeStatus
+  citationCount: number
+  graphNodeCount: number
+  graphEdgeCount: number
+  stepCount: number
+  toolCallCount: number
+  requestId?: string
+  traceId?: string
+}
+
 type UiChatMessage = ChatMessage & {
   agentName?: string
   agentRuntimeStatus?: RuntimeStatus
   answerScope?: AnswerScopeSnapshot
+  turnAudit?: TurnAuditMetadata
   citationReferenceIds?: string[]
   evidenceGraph?: RuntimeGraphState
   toolCalls?: AgentToolCallTrace[]
@@ -563,6 +602,10 @@ export default function App() {
   const [runGraph, setRunGraph] = useState<RuntimeGraphState | null>(null)
   const [graphMode, setGraphMode] = useState<GraphMode>('selection')
   const [pageReadCache, setPageReadCache] = useState<Record<string, PageReadCacheEntry>>({})
+  const [localIoLoggingEnabled, setLocalIoLoggingEnabled] = useState(loadLocalIoLoggingEnabled)
+  const [localIoLogEntries, setLocalIoLogEntries] = useState(() => (
+    loadLocalIoLoggingEnabled() ? loadLocalIoLogEntries() : []
+  ))
   const threadRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const questionRef = useRef<HTMLTextAreaElement>(null)
@@ -573,6 +616,9 @@ export default function App() {
   const sourceDiscoveryRequests = useRef(new Map<string, SourceDiscoveryRequest>())
   const runtimeDiscoveryRequests = useRef(new Map<string, RuntimeDiscoveryRequest>())
   const pageReadRequests = useRef(new Set<string>())
+  const sessionIdRef = useRef(createId())
+  const threadIdRef = useRef(createId())
+  const localIoLoggingEnabledRef = useRef(localIoLoggingEnabled)
   const initialConnections = useRef<Connection[] | null>(null)
   const initialAgents = useRef<AgentConnection[] | null>(null)
   if (initialConnections.current === null) initialConnections.current = connections
@@ -580,6 +626,26 @@ export default function App() {
 
   const abortActiveRun = useCallback(() => {
     activeRunController.current?.abort()
+  }, [])
+
+  const commitLocalIoLogEntries = useCallback((updater: (entries: LocalIoLogEntry[]) => LocalIoLogEntry[]) => {
+    if (!localIoLoggingEnabledRef.current) return
+    setLocalIoLogEntries((current) => storeLocalIoLogEntries(updater(current)))
+  }, [])
+
+  const setLocalIoLogCollection = useCallback((enabled: boolean) => {
+    localIoLoggingEnabledRef.current = enabled
+    persistLocalIoLoggingEnabled(enabled)
+    setLocalIoLoggingEnabled(enabled)
+    if (!enabled) {
+      clearLocalIoLogEntries()
+      setLocalIoLogEntries([])
+    }
+  }, [])
+
+  const clearLocalIoLog = useCallback(() => {
+    clearLocalIoLogEntries()
+    setLocalIoLogEntries([])
   }, [])
 
   const abortActiveRunForScopeChange = useCallback((nextAgents: AgentConnection[], nextConnections: Connection[]) => {
@@ -938,6 +1004,7 @@ export default function App() {
 
   const resetChat = useCallback(() => {
     abortActiveRun()
+    threadIdRef.current = createId()
     pendingAssistantScrollId.current = null
     setMessages([])
     setQuery('')
@@ -970,7 +1037,15 @@ export default function App() {
     activeRunController.current?.abort()
     const runController = new AbortController()
     activeRunController.current = runController
+    const userMessageId = createId()
     const assistantId = createId()
+    const turnId = createId()
+    const threadId = threadIdRef.current
+    const sessionId = sessionIdRef.current
+    const runtimeMessages = runtimeConversationMessages(messages, clean)
+    const captureLocalIoLog = localIoLoggingEnabledRef.current
+    const localIoLogEntryId = createId()
+    const startedAt = new Date().toISOString()
     const initialEvidenceGraph: RuntimeGraphState = {
       messageId: assistantId,
       sourceKey,
@@ -988,7 +1063,7 @@ export default function App() {
     setRunGraph(initialEvidenceGraph)
     setMessages((items) => [
       ...items,
-      { id: createId(), role: 'user', text: clean, citations: [] },
+      { id: userMessageId, role: 'user', text: clean, citations: [] },
       {
         id: assistantId,
         role: 'assistant',
@@ -998,13 +1073,43 @@ export default function App() {
         agentName: agent.name,
         agentRuntimeStatus: 'running',
         answerScope: createAnswerScopeSnapshot(agent, selectedConnections, knowledgeSources, 'running'),
+        turnAudit: createTurnAuditMetadata(turnId, agent, selectedConnections, knowledgeSources, sourceGraph, startedAt),
         evidenceGraph: initialEvidenceGraph,
         toolCalls: [],
       },
     ])
+    if (captureLocalIoLog) {
+      commitLocalIoLogEntries((items) => [
+        ...items,
+        {
+          schemaVersion: localIoLogSchemaVersion,
+          id: localIoLogEntryId,
+          turnId,
+          threadId,
+          sessionId,
+          messageId: userMessageId,
+          assistantMessageId: assistantId,
+          startedAt,
+          updatedAt: startedAt,
+          status: 'running',
+          runtime: {
+            id: agent.id,
+            name: agent.name,
+            protocol: agent.protocol,
+            ...(agent.bridge?.mode ? { mode: agent.bridge.mode } : {}),
+          },
+          prompt: clean,
+        },
+      ])
+    }
 
     const updateAssistant = (updater: (message: UiChatMessage) => UiChatMessage) => {
       setMessages((items) => items.map((item) => (item.id === assistantId ? updater(item) : item)))
+    }
+
+    const updateLocalIoLogEntry = (updater: (entry: LocalIoLogEntry) => LocalIoLogEntry) => {
+      if (!localIoLoggingEnabledRef.current) return
+      commitLocalIoLogEntries((items) => items.map((item) => (item.id === localIoLogEntryId ? updater(item) : item)))
     }
 
     let completed = false
@@ -1013,12 +1118,25 @@ export default function App() {
         agent,
         knowledgeSources,
         query: clean,
+        messages: runtimeMessages,
+        messageId: userMessageId,
+        threadId,
+        sessionId,
+        turnId,
         signal: runController.signal,
       })) {
         if ('step' in event) {
           updateAssistant((message) => ({
             ...message,
             steps: upsertStep(message.steps || [], event.step),
+          }))
+        }
+
+        if (event.type === 'runtime_request') {
+          updateLocalIoLogEntry((entry) => ({
+            ...entry,
+            request: localIoLogRuntimeRequest(event.request),
+            updatedAt: new Date().toISOString(),
           }))
         }
 
@@ -1077,6 +1195,14 @@ export default function App() {
 
         if (event.type === 'answer_delta') {
           updateAssistant((message) => ({ ...message, text: `${message.text}${event.delta}` }))
+          updateLocalIoLogEntry((entry) => ({
+            ...entry,
+            response: {
+              ...entry.response,
+              answer: `${entry.response?.answer || ''}${event.delta}`,
+            },
+            updatedAt: new Date().toISOString(),
+          }))
         }
 
         if (event.type === 'error') {
@@ -1090,6 +1216,7 @@ export default function App() {
         if (event.type === 'run_completed') {
           completed = true
           const finalRuntimeStatus: RuntimeStatus = event.result.steps.some((step) => step.status === 'error') ? 'error' : 'ready'
+          const completedAt = new Date().toISOString()
           const completedEvidenceGraph = updateEvidenceGraphState(
             initialEvidenceGraph,
             assistantId,
@@ -1108,9 +1235,27 @@ export default function App() {
             event.result.steps,
           )
           const firstCitation = orderedResult.citations[0] || null
+          const toolCalls = renderToolCallsFromSteps(knowledgeSources, event.result.steps, orderedResult.citations)
           setSelectedCitation(firstCitation)
           setSelectedCitationReturnTarget(null)
           setSelectedNodeId(firstCitation ? graphNodeIdForCitation(firstCitation, completedEvidenceGraph.graph) : '')
+          updateLocalIoLogEntry((entry) => ({
+            ...entry,
+            response: {
+              answer: orderedResult.answer,
+              metadata: localIoLogResponseMetadata(
+                finalRuntimeStatus,
+                completedAt,
+                orderedResult.citations,
+                completedEvidenceGraph.graph,
+                event.result.steps,
+                toolCalls,
+              ),
+            },
+            status: finalRuntimeStatus === 'error' ? 'error' : 'completed',
+            completedAt,
+            updatedAt: completedAt,
+          }))
           updateAssistant((message) => ({
             ...message,
             text: orderedResult.answer,
@@ -1119,6 +1264,16 @@ export default function App() {
             steps: event.result.steps,
             agentRuntimeStatus: finalRuntimeStatus,
             answerScope: updateAnswerScopeRuntimeStatus(message.answerScope, finalRuntimeStatus),
+            turnAudit: completeTurnAuditMetadata(
+              message.turnAudit,
+              sourceSnapshots,
+              finalRuntimeStatus,
+              completedAt,
+              orderedResult.citations,
+              completedEvidenceGraph.graph,
+              event.result.steps,
+              toolCalls,
+            ),
             evidenceGraph: updateEvidenceGraphState(
               message.evidenceGraph,
               assistantId,
@@ -1128,7 +1283,7 @@ export default function App() {
               sourceGraph,
               event.result.graph,
             ),
-            toolCalls: renderToolCallsFromSteps(knowledgeSources, event.result.steps, orderedResult.citations),
+            toolCalls,
           }))
         }
       }
@@ -1137,10 +1292,26 @@ export default function App() {
       const message = error instanceof Error ? error.message : String(error)
       const canceled = isCanceledRunError(error)
       const diagnostic = diagnosticFromError(error)
-      updateAssistant((item) => ({
-        ...item,
-        text: item.text || (canceled ? 'Canceled because the selected scope changed. Ask again when the intended sources and runtime are selected.' : `Agent run failed: ${message}`),
-        steps: upsertStep(item.steps || [], {
+      const completedAt = new Date().toISOString()
+      const assistantFailure = canceled
+        ? 'Canceled because the selected scope changed. Ask again when the intended sources and runtime are selected.'
+        : `Agent run failed: ${message}`
+      updateLocalIoLogEntry((entry) => ({
+        ...entry,
+        response: {
+          ...entry.response,
+          answer: entry.response?.answer || assistantFailure,
+        },
+        error: {
+          message: assistantFailure,
+          diagnostic,
+        },
+        status: 'error',
+        completedAt,
+        updatedAt: completedAt,
+      }))
+      updateAssistant((item) => {
+        const nextSteps = upsertStep(item.steps || [], {
           id: canceled ? 'agent-canceled' : 'agent-error',
           label: canceled ? `Cancel ${agent.name}` : `Run ${agent.name}`,
           status: 'error',
@@ -1148,21 +1319,37 @@ export default function App() {
           timestamp: new Date().toISOString(),
           runtimeId: agent.id,
           diagnostic,
-        }),
-        agentRuntimeStatus: 'error',
-        answerScope: updateAnswerScopeRuntimeStatus(item.answerScope, 'error'),
-        toolCalls: item.toolCalls?.length
+        })
+        const nextToolCalls: AgentToolCallTrace[] = item.toolCalls?.length
           ? item.toolCalls.map((call) => (call.status === 'running' ? { ...call, status: 'error' as const } : call))
           : knowledgeSources.map((connection) => ({
-              id: connection.id,
-              sourceName: connection.name,
-              sourceProtocol: connection.protocol,
-              status: 'error',
-              detail: canceled
-                ? 'The agent run was canceled before this source returned evidence.'
-                : 'The agent run stopped before this source returned evidence.',
-            })),
-      }))
+            id: connection.id,
+            sourceName: connection.name,
+            sourceProtocol: connection.protocol,
+            status: 'error' as const,
+            detail: canceled
+              ? 'The agent run was canceled before this source returned evidence.'
+              : 'The agent run stopped before this source returned evidence.',
+          }))
+        return {
+          ...item,
+          text: item.text || assistantFailure,
+          steps: nextSteps,
+          agentRuntimeStatus: 'error' as const,
+          answerScope: updateAnswerScopeRuntimeStatus(item.answerScope, 'error'),
+          turnAudit: completeTurnAuditMetadata(
+            item.turnAudit,
+            sourceSnapshots,
+            'error',
+            completedAt,
+            item.citations,
+            item.evidenceGraph?.graph || sourceGraph,
+            nextSteps,
+            nextToolCalls,
+          ),
+          toolCalls: nextToolCalls,
+        }
+      })
     } finally {
       if (activeRunController.current === runController) {
         activeRunController.current = null
@@ -1240,6 +1427,7 @@ export default function App() {
                     scope={message.answerScope}
                     agentName={message.agentName || message.answerScope.runtime.name}
                     runtimeStatus={message.agentRuntimeStatus || message.answerScope.runtime.status}
+                    turnAudit={message.turnAudit}
                     steps={message.steps || []}
                     toolCalls={message.toolCalls || []}
                   />
@@ -1247,6 +1435,7 @@ export default function App() {
                   <AnswerRunDetails
                     agentName={message.agentName}
                     runtimeStatus={message.agentRuntimeStatus || 'ready'}
+                    turnAudit={message.turnAudit}
                     steps={message.steps || []}
                     toolCalls={message.toolCalls || []}
                   />
@@ -1322,36 +1511,38 @@ export default function App() {
             </div>
           )}
         </div>
-        <form
-          className="composer"
-          ref={composerRef}
-          onSubmit={(event) => {
-            event.preventDefault()
-            void ask()
-          }}
-        >
-          <label htmlFor="query">Question</label>
-          <textarea
-            id="query"
-            ref={questionRef}
-            value={query}
-            aria-describedby="ask-status"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                void ask()
-              }
+        <div className="chat-footer">
+          <form
+            className="composer"
+            ref={composerRef}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void ask()
             }}
-            rows={3}
-          />
-          <button type="submit" disabled={!canAsk} aria-describedby="ask-status">
-            {askButtonLabel(busy, selectedConnections)}
-          </button>
-          <p id="ask-status" className={`ask-status ${askStatusTone}`} aria-live="polite">
-            {askStatusMessage}
-          </p>
-        </form>
+          >
+            <label htmlFor="query">Question</label>
+            <textarea
+              id="query"
+              ref={questionRef}
+              value={query}
+              aria-describedby="ask-status"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void ask()
+                }
+              }}
+              rows={3}
+            />
+            <button type="submit" disabled={!canAsk} aria-describedby="ask-status">
+              {askButtonLabel(busy, selectedConnections)}
+            </button>
+            <p id="ask-status" className={`ask-status ${askStatusTone}`} aria-live="polite">
+              {askStatusMessage}
+            </p>
+          </form>
+        </div>
       </section>
       <aside className="inspector" aria-label="Knowledge graph and details" ref={inspectorRef}>
         <KnowledgeMapSummary
@@ -1402,6 +1593,12 @@ export default function App() {
           onSelectNode={selectGraphNode}
           onBackToAnswer={selectedCitationReturnTarget ? () => revealAnswerCitation(selectedCitationReturnTarget) : undefined}
         />
+        <LocalIoLogPanel
+          enabled={localIoLoggingEnabled}
+          entries={localIoLogEntries}
+          onToggle={setLocalIoLogCollection}
+          onClear={clearLocalIoLog}
+        />
       </aside>
       <aside className="sidebar" aria-label="Knowledge connections">
         <h2 className="mobile-management-heading">Source management</h2>
@@ -1418,6 +1615,149 @@ export default function App() {
         />
       </aside>
     </main>
+  )
+}
+
+function LocalIoLogPanel({
+  enabled,
+  entries,
+  onToggle,
+  onClear,
+}: {
+  enabled: boolean
+  entries: LocalIoLogEntry[]
+  onToggle: (enabled: boolean) => void
+  onClear: () => void
+}) {
+  const [actionStatus, setActionStatus] = useState('')
+  const jsonl = useMemo(() => localIoLogJsonl(entries), [entries])
+  const newestEntries = useMemo(() => [...entries].reverse(), [entries])
+
+  async function copyJsonl() {
+    if (!entries.length) return
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(jsonl)
+      setActionStatus('Copied JSONL to clipboard.')
+    } catch {
+      setActionStatus('Copy failed; use Export JSONL or select the visible entry text.')
+    }
+  }
+
+  function exportJsonl() {
+    if (!entries.length) return
+    try {
+      if (!URL.createObjectURL) throw new Error('Object URLs unavailable')
+      const blob = new Blob([jsonl], { type: 'application/x-ndjson' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `llmwiki-chat-local-io-log-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`
+      link.click()
+      URL.revokeObjectURL(url)
+      setActionStatus('Exported JSONL download.')
+    } catch {
+      setActionStatus('Export failed; copy the visible JSONL instead.')
+    }
+  }
+
+  return (
+    <section className="local-io-log-controls" aria-label="Local I/O logging controls">
+      <label className="local-io-log-toggle">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+        <span>Local I/O logging</span>
+      </label>
+      <p>
+        On by default for local debugging. Recent prompts, runtime request payloads, answers, errors, and metadata
+        are stored as bounded JSONL in this browser only. Authorization headers, bearer tokens, API keys, and
+        credential-bearing URL parts are redacted before storage.
+      </p>
+      {enabled ? (
+        <details className="local-io-log-panel" role="region" aria-label="Local I/O log">
+          <summary className="local-io-log-panel-header">
+            <strong>Local I/O log</strong>
+            <span>{entries.length ? `${entries.length} retained entr${entries.length === 1 ? 'y' : 'ies'}.` : 'No entries yet.'}</span>
+          </summary>
+          <div className="local-io-log-panel-body">
+            <div className="local-io-log-actions" role="group" aria-label="Local I/O log actions">
+              <button type="button" onClick={() => void copyJsonl()} disabled={!entries.length}>
+                Copy JSONL
+              </button>
+              <button type="button" onClick={exportJsonl} disabled={!entries.length}>
+                Export JSONL
+              </button>
+              <button type="button" onClick={onClear} disabled={!entries.length}>
+                Clear local I/O log
+              </button>
+            </div>
+            {actionStatus ? <p className="local-io-log-action-status" aria-live="polite">{actionStatus}</p> : null}
+            <p>{entries.length ? `${entries.length} retained entr${entries.length === 1 ? 'y' : 'ies'}.` : 'No local I/O entries collected yet.'}</p>
+            {newestEntries.length ? (
+              <ol>
+                {newestEntries.map((entry) => (
+                  <li key={entry.id}>
+                    <div className={`local-io-log-status ${entry.status}`}>{entry.status}</div>
+                    <dl>
+                      <div>
+                        <dt>Turn ID</dt>
+                        <dd>{entry.turnId}</dd>
+                      </div>
+                      <div>
+                        <dt>Started</dt>
+                        <dd>{entry.startedAt}</dd>
+                      </div>
+                      <div>
+                        <dt>Runtime request</dt>
+                        <dd>{entry.request ? `${entry.request.transport} · ${entry.request.summary.selectedKnowledgeSourceCount || 0} source(s) · ${entry.request.summary.messagesIncluded || 0} message(s)` : 'Waiting for runtime request...'}</dd>
+                      </div>
+                      <div>
+                        <dt>User prompt</dt>
+                        <dd>
+                          <input
+                            aria-label={`User prompt for turn ${entry.turnId}`}
+                            className="local-io-log-field"
+                            readOnly
+                            value={entry.prompt}
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Assistant answer or error</dt>
+                        <dd>
+                          <input
+                            aria-label={`Assistant answer or error for turn ${entry.turnId}`}
+                            className="local-io-log-field"
+                            readOnly
+                            value={entry.response?.answer || entry.error?.message || 'Waiting for assistant answer...'}
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>JSONL entry</dt>
+                        <dd>
+                          <input
+                            aria-label={`JSONL entry for turn ${entry.turnId}`}
+                            className="local-io-log-field local-io-log-json"
+                            readOnly
+                            value={JSON.stringify(entry, null, 2)}
+                          />
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+          </div>
+        </details>
+      ) : (
+        <p className="local-io-log-disabled">Local I/O logging is off. Stored raw entries were cleared and future turns will not be logged until you re-enable it.</p>
+      )}
+    </section>
   )
 }
 
@@ -2647,12 +2987,14 @@ function AnswerRunDetails({
   scope,
   agentName,
   runtimeStatus,
+  turnAudit,
   steps,
   toolCalls,
 }: {
   scope?: AnswerScopeSnapshot
   agentName: string
   runtimeStatus: RuntimeStatus
+  turnAudit?: TurnAuditMetadata
   steps: AgentStep[]
   toolCalls: AgentToolCallTrace[]
 }) {
@@ -2696,6 +3038,7 @@ function AnswerRunDetails({
             </div>
           </section>
         ) : null}
+        {turnAudit ? <TurnAuditDetails audit={turnAudit} /> : null}
         {hasTraceDetails ? (
           <section className="run-detail-section" aria-label="Agent trace">
             <strong>Agent trace</strong>
@@ -2731,6 +3074,71 @@ function AnswerRunDetails({
         )}
       </div>
     </details>
+  )
+}
+
+function TurnAuditDetails({ audit }: { audit: TurnAuditMetadata }) {
+  return (
+    <section className="run-detail-section turn-audit" aria-label="Turn audit">
+      <strong>Turn audit</strong>
+      <p>In-memory redacted client summary. It does not include prompts, answers, endpoint URLs, or tokens.</p>
+      <dl className="turn-audit-grid">
+        <div>
+          <dt>Turn ID</dt>
+          <dd>{audit.turnId}</dd>
+        </div>
+        <div>
+          <dt>Runtime mode</dt>
+          <dd>{audit.runtimeMode || 'n/a'}</dd>
+        </div>
+        <div>
+          <dt>Runtime protocol</dt>
+          <dd>{audit.runtimeProtocol}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{audit.status}</dd>
+        </div>
+        <div>
+          <dt>Sources</dt>
+          <dd>{audit.selectedSourceCount} selected · {audit.readySourceCount} ready · {audit.usedSourceCount} used</dd>
+        </div>
+        <div>
+          <dt>Started</dt>
+          <dd>{audit.startedAt}</dd>
+        </div>
+        {audit.completedAt ? (
+          <div>
+            <dt>Completed</dt>
+            <dd>{audit.completedAt}</dd>
+          </div>
+        ) : null}
+        {audit.durationMs !== undefined ? (
+          <div>
+            <dt>Duration</dt>
+            <dd>{audit.durationMs}ms</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Counts</dt>
+          <dd>
+            citations {audit.citationCount} · graph nodes {audit.graphNodeCount} · graph edges {audit.graphEdgeCount} · steps {audit.stepCount} · tool calls {audit.toolCallCount}
+          </dd>
+        </div>
+        {audit.requestId ? (
+          <div>
+            <dt>Request ID</dt>
+            <dd>{audit.requestId}</dd>
+          </div>
+        ) : null}
+        {audit.traceId ? (
+          <div>
+            <dt>Trace ID</dt>
+            <dd>{audit.traceId}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </section>
   )
 }
 
@@ -3945,6 +4353,182 @@ function createAnswerScopeSnapshot(
     selectedSourceCount: selectedSources.length,
     usedSourceCount: usedSources.length,
     sources: usedSources.map(sourceScopeSnapshot),
+  }
+}
+
+function runtimeConversationMessages(messages: UiChatMessage[], latestUserTurn: string): AgentRuntimeMessage[] {
+  const priorMessages = messages
+    .map(runtimeConversationMessage)
+    .filter((message): message is AgentRuntimeMessage => Boolean(message))
+  const combined: AgentRuntimeMessage[] = [
+    ...priorMessages,
+    { role: 'user', content: latestUserTurn.trim() },
+  ]
+  return combined.filter((message) => message.content).slice(-runtimeConversationMessageLimit)
+}
+
+function runtimeConversationMessage(message: UiChatMessage): AgentRuntimeMessage | null {
+  const content = message.text.trim()
+  if (!content) return null
+  return { role: message.role, content }
+}
+
+function createTurnAuditMetadata(
+  turnId: string,
+  agent: AgentConnection,
+  selectedSources: Connection[],
+  readySources: Connection[],
+  graph: KnowledgeGraph,
+  startedAt: string,
+): TurnAuditMetadata {
+  return {
+    turnId,
+    runtimeMode: runtimeModeLabel(agent),
+    runtimeProtocol: agent.protocol,
+    selectedSourceCount: selectedSources.length,
+    readySourceCount: readySources.length,
+    usedSourceCount: 0,
+    startedAt,
+    status: 'running',
+    citationCount: 0,
+    graphNodeCount: graph.nodes.length,
+    graphEdgeCount: graph.edges.length,
+    stepCount: 0,
+    toolCallCount: 0,
+  }
+}
+
+function completeTurnAuditMetadata(
+  audit: TurnAuditMetadata | undefined,
+  sources: ScopeSourceSnapshot[],
+  status: RuntimeStatus,
+  completedAt: string,
+  citations: Citation[],
+  graph: KnowledgeGraph,
+  steps: AgentStep[],
+  toolCalls: AgentToolCallTrace[],
+): TurnAuditMetadata | undefined {
+  if (!audit) return undefined
+  const ids = safeTurnAuditIds(steps)
+  return {
+    ...audit,
+    completedAt,
+    durationMs: turnAuditDurationMs(audit.startedAt, completedAt),
+    status,
+    citationCount: citations.length,
+    graphNodeCount: graph.nodes.length,
+    graphEdgeCount: graph.edges.length,
+    stepCount: steps.length,
+    toolCallCount: turnAuditToolCallCount(steps, toolCalls),
+    usedSourceCount: turnAuditUsedSourceCount(sources, steps, citations, toolCalls),
+    ...(ids.requestId ? { requestId: ids.requestId } : {}),
+    ...(ids.traceId ? { traceId: ids.traceId } : {}),
+  }
+}
+
+function turnAuditDurationMs(startedAt: string, completedAt: string): number | undefined {
+  const started = Date.parse(startedAt)
+  const completed = Date.parse(completedAt)
+  if (!Number.isFinite(started) || !Number.isFinite(completed)) return undefined
+  return Math.max(0, completed - started)
+}
+
+function turnAuditToolCallCount(steps: AgentStep[], toolCalls: AgentToolCallTrace[]): number {
+  return toolCalls.length || steps.filter((step) => Boolean(step.toolName)).length
+}
+
+function turnAuditUsedSourceCount(
+  sources: ScopeSourceSnapshot[],
+  steps: AgentStep[],
+  citations: Citation[],
+  toolCalls: AgentToolCallTrace[],
+): number {
+  const readySourceIds = new Set(sources.map((source) => source.id))
+  const usedIds = new Set<string>()
+  steps.forEach((step) => {
+    if (step.connectionId && readySourceIds.has(step.connectionId)) usedIds.add(step.connectionId)
+  })
+  citations.forEach((citation) => {
+    if (citation.connectionId && readySourceIds.has(citation.connectionId)) usedIds.add(citation.connectionId)
+  })
+  toolCalls.forEach((call) => {
+    if (readySourceIds.has(call.id)) usedIds.add(call.id)
+  })
+  return usedIds.size
+}
+
+function safeTurnAuditIds(steps: AgentStep[]): { requestId?: string; traceId?: string } {
+  return {
+    requestId: firstSafeAuditId(steps.flatMap((step) => [
+      step.requestId,
+      step.diagnostic?.requestId,
+    ])),
+    traceId: firstSafeAuditId(steps.flatMap((step) => [
+      step.traceId,
+      step.diagnostic?.traceId,
+    ])),
+  }
+}
+
+function firstSafeAuditId(values: Array<string | undefined>): string | undefined {
+  return values.map(safeAuditId).find(Boolean)
+}
+
+function safeAuditId(value: string | undefined): string | undefined {
+  const clean = value?.trim()
+  if (!clean) return undefined
+  if (clean.length > 128) return undefined
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(clean)) return undefined
+  if (/^(?:https?|wss?):/i.test(clean)) return undefined
+  if (/(?:bearer|token|secret|password|sk-[A-Za-z0-9_-]|sk-proj-[A-Za-z0-9_-])/i.test(clean)) return undefined
+  return clean
+}
+
+function localIoLogRuntimeRequest(request: AgentRuntimeRequestLog): LocalIoLogEntry['request'] {
+  return {
+    transport: request.transport,
+    summary: request.summary,
+    body: request.body,
+  }
+}
+
+function localIoLogResponseMetadata(
+  status: RuntimeStatus,
+  completedAt: string,
+  citations: Citation[],
+  graph: KnowledgeGraph,
+  steps: AgentStep[],
+  toolCalls: AgentToolCallTrace[],
+): Record<string, unknown> {
+  return {
+    status,
+    completedAt,
+    citationCount: citations.length,
+    graphNodeCount: graph.nodes.length,
+    graphEdgeCount: graph.edges.length,
+    stepCount: steps.length,
+    toolCallCount: toolCalls.length,
+    ...safeTurnAuditIds(steps),
+    steps: steps.map(localIoLogStepMetadata),
+  }
+}
+
+function localIoLogStepMetadata(step: AgentStep): Record<string, unknown> {
+  const requestId = safeAuditId(step.requestId)
+  const traceId = safeAuditId(step.traceId)
+  return {
+    id: step.id,
+    label: step.label,
+    status: step.status,
+    ...(step.detail ? { detail: step.detail } : {}),
+    ...(step.error ? { error: step.error } : {}),
+    ...(step.runtimeId ? { runtimeId: step.runtimeId } : {}),
+    ...(step.toolName ? { toolName: step.toolName } : {}),
+    ...(step.connectionId ? { connectionId: step.connectionId } : {}),
+    ...(step.citationIds?.length ? { citationIds: step.citationIds } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(traceId ? { traceId } : {}),
+    ...(step.diagnostic ? { diagnostic: step.diagnostic } : {}),
   }
 }
 

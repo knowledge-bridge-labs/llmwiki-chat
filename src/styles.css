@@ -340,6 +340,7 @@ dd,
 .panel,
 .message,
 .chat-header,
+.chat-footer,
 .composer {
   border: 1px solid #d8e1ee;
   border-radius: 8px;
@@ -755,6 +756,152 @@ dd,
 
 .refresh-chat-action {
   white-space: nowrap;
+}
+
+.local-io-log-controls {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed #b8c5d8;
+  border-radius: 10px;
+  background: #f9fbfe;
+  padding: 8px 10px;
+}
+
+.local-io-log-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #10233f;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.local-io-log-controls p {
+  margin: 0;
+}
+
+.local-io-log-panel {
+  border-top: 1px solid #dbe3ef;
+  padding-top: 8px;
+}
+
+.local-io-log-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.local-io-log-panel-header::-webkit-details-marker {
+  display: none;
+}
+
+.local-io-log-panel-header::after {
+  content: "Show log";
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.local-io-log-panel[open] > .local-io-log-panel-header::after {
+  content: "Hide log";
+}
+
+.local-io-log-panel-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.local-io-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.local-io-log-action-status,
+.local-io-log-disabled {
+  color: #526073;
+  font-size: 12px;
+}
+
+.local-io-log-panel ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.local-io-log-panel li {
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.local-io-log-panel dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.local-io-log-panel dt {
+  color: #5c667a;
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.local-io-log-panel dd {
+  margin: 2px 0 0;
+  color: #10233f;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.local-io-log-field {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px;
+  color: #10233f;
+  font: inherit;
+  font-size: 12px;
+}
+
+.local-io-log-json {
+  max-height: 220px;
+  overflow: auto;
+  background: #f5f7fb;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.local-io-log-status {
+  justify-self: start;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #eef2f7;
+  color: #526073;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.local-io-log-status.completed {
+  background: #eefbf4;
+  color: #146c43;
+}
+
+.local-io-log-status.error {
+  background: #fff1f1;
+  color: #a32121;
 }
 
 .connection-status-details {
@@ -1255,6 +1402,41 @@ button:disabled {
   gap: 6px;
 }
 
+.turn-audit p {
+  margin: 0;
+  color: #526073;
+  font-size: 12px;
+}
+
+.turn-audit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.turn-audit-grid div {
+  min-width: 0;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #f7f9fc;
+  padding: 6px 8px;
+}
+
+.turn-audit-grid dt {
+  color: #5c667a;
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.turn-audit-grid dd {
+  margin: 2px 0 0;
+  color: #10233f;
+  overflow-wrap: anywhere;
+}
+
 .scope-chip {
   display: inline-flex;
   min-width: 0;
@@ -1457,6 +1639,15 @@ button:disabled {
   position: relative;
   z-index: 2;
   box-shadow: 0 -1px 2px rgb(15 23 42 / 0.035), 0 10px 30px rgb(15 23 42 / 0.035);
+}
+
+.chat-footer {
+  display: grid;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 .composer label {

@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { localIoLogStorageKey } from './localIoLog'
 import { isReachablePublicHttpsSourceUrl } from './urlPolicy'
 
 const externalRuntimeSourceUrlAdvisoryMessage = 'Warning: selected ready Knowledge Source URLs include HTTP, private, or non-public hosts. External runtimes may not be able to reach them; public or strict deployments should use public HTTPS sources or enforce runtime/proxy allowlists.'
@@ -128,6 +129,7 @@ function a2aAgentResultResponse(
     citations?: Array<Record<string, unknown>>
     graph?: Record<string, unknown>
     steps?: Array<Record<string, unknown>>
+    metadata?: Record<string, unknown>
   } = {},
 ) {
   return Response.json({
@@ -150,6 +152,7 @@ function a2aAgentResultResponse(
                   detail: 'Returned a structured markdown answer.',
                 },
               ],
+              ...(result.metadata || {}),
             },
           },
         ],
@@ -164,7 +167,10 @@ async function askCustomA2aAnswer(
     citations?: Array<Record<string, unknown>>
     graph?: Record<string, unknown>
     steps?: Array<Record<string, unknown>>
+    metadata?: Record<string, unknown>
   } = {},
+  question = 'Render the custom runtime answer',
+  options: { disableLocalIoLogging?: boolean } = {},
 ) {
   const user = userEvent.setup()
   stubFetch(() => Response.json(queryPayload()), async (url) => {
@@ -199,7 +205,10 @@ async function askCustomA2aAnswer(
   expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
 
   await user.click(within(runtimeCard as HTMLElement).getByRole('radio', { name: /Custom A2A/ }))
-  await user.type(screen.getByLabelText('Question'), 'Render the custom runtime answer')
+  if (options.disableLocalIoLogging) {
+    await user.click(screen.getByRole('checkbox', { name: /Local I\/O logging/ }))
+  }
+  await user.type(screen.getByLabelText('Question'), question)
   await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
 
   return screen.getByRole('region', { name: 'Chat' })
@@ -309,6 +318,19 @@ function requestHeader(init: RequestInit | undefined, name: string): string | nu
   return new Headers(init?.headers).get(name)
 }
 
+function storageDump(storage: Storage): string {
+  return Array.from({ length: storage.length }, (_value, index) => storage.key(index) || '')
+    .map((key) => `${key}\n${storage.getItem(key) || ''}`)
+    .join('\n')
+}
+
+function readLocalIoLogEntries(): Array<Record<string, unknown>> {
+  const raw = window.localStorage.getItem(localIoLogStorageKey) || ''
+  return raw.trim()
+    ? raw.trim().split(/\r?\n/).map((line) => JSON.parse(line) as Record<string, unknown>)
+    : []
+}
+
 function stubA2aRuntimeDiscovery(runtimeUrl = customA2aRuntimeUrl, runtimeName = 'Custom Runtime') {
   return stubFetch(() => Response.json(queryPayload()), async (url) => {
     if (url === `${runtimeUrl}/.well-known/agent-card.json`) {
@@ -327,6 +349,7 @@ function stubA2aRuntimeDiscovery(runtimeUrl = customA2aRuntimeUrl, runtimeName =
 describe('LLMWiki Chat', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     stubFetch()
   })
 
@@ -335,6 +358,7 @@ describe('LLMWiki Chat', () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     window.localStorage.clear()
+    window.sessionStorage.clear()
   })
 
   it.each([
@@ -1779,7 +1803,7 @@ describe('LLMWiki Chat', () => {
     expect([...assistantMessage.children].indexOf(runDetails)).toBeLessThan([...assistantMessage.children].indexOf(answerTop as Element))
     const inlineCitation = within(assistantMessage).getAllByRole('button', { name: 'Citation 1: Current Focus' })[0]
     expect(inlineCitation).toHaveClass('inline-citation')
-    expect(within(runDetails).getByText('ready')).toBeInTheDocument()
+    expect(within(runDetails).getAllByText('ready').length).toBeGreaterThan(0)
     expect(within(runDetails).getByText('4 steps · 1 tool call')).toBeInTheDocument()
     expect(runDetails.open).toBe(false)
     await user.click(within(runDetails).getByText('Run details'))
@@ -1823,6 +1847,328 @@ describe('LLMWiki Chat', () => {
     await user.click(within(citationEvidence).getByText('Citation reference details'))
     expect(referenceDetails).toHaveAttribute('open')
     expect(within(citationEvidence).getByText('SRC-HOT')).toBeInTheDocument()
+  })
+
+  it('renders redacted in-memory turn audit metadata without prompt, answer, or endpoint URLs', async () => {
+    const user = userEvent.setup()
+    const sensitivePrompt = 'audit-secret-prompt should stay out of turn audit'
+    const sensitiveAnswer = 'audit-secret-answer cites [Runtime Focus](#citation-1).'
+    const chat = await askCustomA2aAnswer(
+      sensitiveAnswer,
+      {
+        citations: [
+          {
+            id: 'local-demo:runtime-focus',
+            title: 'Runtime Focus',
+            path: 'runtime-focus.md',
+            snippet: 'Runtime evidence.',
+            connectionId: 'local-demo',
+            sourceRefs: ['RUNTIME-SRC'],
+          },
+        ],
+        graph: {
+          nodes: [
+            { id: 'page:runtime-focus', label: 'Runtime Focus', kind: 'topic', path: 'runtime-focus.md' },
+            { id: 'source:RUNTIME-SRC', label: 'RUNTIME-SRC', kind: 'source_ref' },
+          ],
+          edges: [
+            { source: 'page:runtime-focus', target: 'source:RUNTIME-SRC', relation: 'cites' },
+          ],
+        },
+        steps: [
+          {
+            id: 'runtime-tool-wiki',
+            label: 'Call selected source',
+            status: 'completed',
+            connection_id: 'local-demo',
+            tool_name: 'llmwiki_context__local_demo',
+            citation_ids: ['local-demo:runtime-focus'],
+            request_id: 'req-safe-123',
+            trace_id: 'https://private.runtime.invalid/trace-secret',
+            detail: 'Read selected source.',
+          },
+        ],
+        metadata: {
+          traceId: 'trace-safe-456',
+          requestId: 'https://private.runtime.invalid/request-secret',
+          sourceUrl: 'https://private-source.invalid/wiki',
+          promptEcho: sensitivePrompt,
+          answerEcho: sensitiveAnswer,
+        },
+      },
+      sensitivePrompt,
+    )
+
+    const answerText = await within(chat).findByText(/audit-secret-answer/)
+    const assistantMessage = assistantMessageFor(answerText)
+    const runDetails = within(assistantMessage).getByLabelText('Custom A2A run details') as HTMLDetailsElement
+    await user.click(within(runDetails).getByText('Run details'))
+
+    const audit = within(runDetails).getByLabelText('Turn audit')
+    expect(audit).toHaveTextContent('Live A2A runtime')
+    expect(audit).toHaveTextContent('custom-a2a')
+    expect(audit).toHaveTextContent('ready')
+    expect(audit).toHaveTextContent('1 selected · 1 ready · 1 used')
+    expect(audit).toHaveTextContent('citations 1')
+    expect(audit).toHaveTextContent('req-safe-123')
+    expect(audit).toHaveTextContent('trace-safe-456')
+    expect(audit).not.toHaveTextContent(sensitivePrompt)
+    expect(audit).not.toHaveTextContent(sensitiveAnswer)
+    expect(audit).not.toHaveTextContent(customA2aRuntimeUrl)
+    expect(audit).not.toHaveTextContent(publicSourceUrl)
+    expect(audit).not.toHaveTextContent('private.runtime.invalid')
+    expect(audit).not.toHaveTextContent('private-source.invalid')
+    expect(audit).not.toHaveTextContent('request-secret')
+    expect(audit).not.toHaveTextContent('trace-secret')
+
+    const persistedConfig = [
+      window.localStorage.getItem(knowledgeSourceStorageKey) || '',
+      window.localStorage.getItem(agentRuntimeStorageKey) || '',
+    ].join('\n')
+    expect(persistedConfig).not.toContain('req-safe-123')
+    expect(persistedConfig).not.toContain('trace-safe-456')
+    expect(persistedConfig).not.toContain(sensitivePrompt)
+    expect(persistedConfig).not.toContain(sensitiveAnswer)
+  })
+
+  it('stores local I/O log entries by default with prompt and answer canaries', async () => {
+    const user = userEvent.setup()
+    const debugPrompt = 'local-io-default prompt canary is stored'
+    const debugAnswer = 'local-io-default answer canary is stored'
+
+    const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt)
+
+    expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
+    expect(screen.getByRole('checkbox', { name: /Local I\/O logging/ })).toBeChecked()
+    const localLog = screen.getByRole('region', { name: 'Local I/O log' })
+    await user.click(within(localLog).getByText('Local I/O log'))
+    expect(within(localLog).getByDisplayValue(debugPrompt)).toBeInTheDocument()
+    expect(within(localLog).getByDisplayValue(debugAnswer)).toBeInTheDocument()
+    expect(within(localLog).getByText('completed')).toBeInTheDocument()
+
+    await waitFor(() => {
+      const raw = window.localStorage.getItem(localIoLogStorageKey) || ''
+      expect(raw).toContain(debugPrompt)
+      expect(raw).toContain(debugAnswer)
+      const entries = readLocalIoLogEntries()
+      expect(entries).toHaveLength(1)
+      const entry = entries[0] as {
+        prompt: string
+        status: string
+        request?: { transport: string; body?: { data?: { query?: string } } }
+        response?: { answer?: string; metadata?: { status?: string; citationCount?: number } }
+      }
+      expect(entry.prompt).toBe(debugPrompt)
+      expect(entry.status).toBe('completed')
+      expect(entry.request?.transport).toBe('a2a-message:send')
+      expect(entry.request?.body?.data?.query).toBe(debugPrompt)
+      expect(entry.response?.answer).toBe(debugAnswer)
+      expect(entry.response?.metadata?.status).toBe('ready')
+      expect(entry.response?.metadata?.citationCount).toBe(0)
+    })
+  })
+
+  it('suppresses local I/O storage when the user opts out', async () => {
+    const debugPrompt = 'local-io-opt-out prompt canary must not be stored'
+    const debugAnswer = 'local-io-opt-out answer canary must not be stored'
+
+    const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt, { disableLocalIoLogging: true })
+
+    expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
+    expect(screen.getByRole('checkbox', { name: /Local I\/O logging/ })).not.toBeChecked()
+    expect(screen.queryByRole('region', { name: 'Local I/O log' })).not.toBeInTheDocument()
+    const persisted = [
+      storageDump(window.localStorage),
+      storageDump(window.sessionStorage),
+    ].join('\n')
+    expect(persisted).not.toContain(debugPrompt)
+    expect(persisted).not.toContain(debugAnswer)
+    expect(readLocalIoLogEntries()).toEqual([])
+  })
+
+  it('clears persisted local I/O log entries', async () => {
+    const user = userEvent.setup()
+    const debugPrompt = 'local-io-clear prompt canary'
+    const debugAnswer = 'local-io-clear answer canary'
+
+    const chat = await askCustomA2aAnswer(debugAnswer, {}, debugPrompt)
+
+    expect((await within(chat).findAllByText(debugAnswer)).length).toBeGreaterThan(0)
+    expect(readLocalIoLogEntries()).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Clear local I/O log' }))
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem(localIoLogStorageKey)).toBeNull()
+    })
+    const localLog = screen.getByRole('region', { name: 'Local I/O log' })
+    await user.click(within(localLog).getByText('Local I/O log'))
+    expect(within(localLog).getByText('No local I/O entries collected yet.')).toBeInTheDocument()
+    const persisted = storageDump(window.localStorage)
+    expect(persisted).not.toContain(debugPrompt)
+    expect(persisted).not.toContain(debugAnswer)
+  })
+
+  it('redacts credential and token canaries from persisted local I/O logs', async () => {
+    const safePromptCanary = 'local-io-redaction safe prompt canary'
+    const safeAnswerCanary = 'local-io-redaction safe answer canary'
+    const secretPromptToken = 'sk-proj-prompt-secret-canary'
+    const secretAnswerToken = 'sk-answersecret123456'
+    const bearerCanary = 'Bearer runtime-token-canary'
+    const metadataToken = 'metadata-token-canary'
+    const basicCanary = 'bG9jYWwtaW8tYmFzaWMtc2VjcmV0'
+    const cookieCanary = 'local-io-cookie-secret'
+    const setCookieCanary = 'local-io-set-cookie-secret'
+    const clientSecretCanary = 'local-io-client-secret'
+    const codeCanary = 'local-io-code-secret'
+    const signatureCanary = 'local-io-signature-secret'
+    const windowsPathCanary = 'C:\\Users\\angel\\local-io-secret.txt'
+    const uncPathCanary = '\\\\server\\share\\local-io-secret.txt'
+    const posixPathCanary = '/home/angel/local-io-secret.txt'
+    const varPathCanary = '/var/tmp/local-io-secret.txt'
+
+    const chat = await askCustomA2aAnswer(
+      `${safeAnswerCanary} ${secretAnswerToken}`,
+      {
+        steps: [
+          {
+            id: 'runtime-sensitive-step',
+            label: 'Sensitive diagnostic step',
+            status: 'completed',
+            detail: `Authorization: ${bearerCanary}`,
+            diagnostic: {
+              observations: [`token=${metadataToken}`],
+              partial: {
+                token: metadataToken,
+                sourceUrl: (
+                  'https://user:pass@wiki.example.test/context?'
+                  + `api_key=url-secret-canary&client_secret=${clientSecretCanary}`
+                  + `&code=${codeCanary}&signature=${signatureCanary}&ok=1`
+                ),
+              },
+            },
+          },
+        ],
+      },
+      [
+        safePromptCanary,
+        secretPromptToken,
+        bearerCanary,
+        `Basic ${basicCanary}`,
+        `Cookie: session=${cookieCanary}`,
+        `Set-Cookie: session=${setCookieCanary}`,
+        windowsPathCanary,
+        uncPathCanary,
+        posixPathCanary,
+        varPathCanary,
+      ].join(' '),
+    )
+
+    expect((await within(chat).findAllByText(/local-io-redaction safe answer canary/)).length).toBeGreaterThan(0)
+    const raw = window.localStorage.getItem(localIoLogStorageKey) || ''
+    expect(raw).toContain(safePromptCanary)
+    expect(raw).toContain(safeAnswerCanary)
+    expect(raw).toContain('[redacted-api-key]')
+    expect(raw).toContain('Bearer [redacted]')
+    expect(raw).toContain('"token":"[redacted]"')
+    expect(raw).toContain('Basic [redacted]')
+    expect(raw).not.toContain(secretPromptToken)
+    expect(raw).not.toContain(secretAnswerToken)
+    expect(raw).not.toContain('runtime-token-canary')
+    expect(raw).not.toContain(metadataToken)
+    expect(raw).not.toContain('user:pass')
+    expect(raw).not.toContain('url-secret-canary')
+    expect(raw).not.toContain(customA2aRuntimeUrl)
+    expect(raw).not.toContain(publicSourceUrl)
+    expect(raw).not.toContain(basicCanary)
+    expect(raw).not.toContain(cookieCanary)
+    expect(raw).not.toContain(setCookieCanary)
+    expect(raw).not.toContain(clientSecretCanary)
+    expect(raw).not.toContain(codeCanary)
+    expect(raw).not.toContain(signatureCanary)
+    expect(raw).not.toContain(windowsPathCanary)
+    expect(raw).not.toContain(uncPathCanary)
+    expect(raw).not.toContain(posixPathCanary)
+    expect(raw).not.toContain(varPathCanary)
+  })
+
+  it('sends bounded conversation messages and stable session metadata to the selected runtime', async () => {
+    const user = userEvent.setup()
+    const runtimeBodies: Array<Record<string, unknown>> = []
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === `${customA2aRuntimeUrl}/.well-known/agent-card.json`) {
+        return Response.json({
+          name: 'External Runtime',
+          description: 'Runtime card',
+          url: '/message:send',
+          capabilities: { streaming: false },
+        })
+      }
+      if (url === `${customA2aRuntimeUrl}/message:send`) {
+        runtimeBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+        return a2aAgentResultResponse(`Runtime answer ${runtimeBodies.length}.`)
+      }
+      return undefined
+    })
+
+    render(<App />)
+    expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+
+    const sourceCard = screen.getByRole('checkbox', { name: 'Sample Wiki' }).closest('article')
+    expect(sourceCard).toBeTruthy()
+    await openSourceSetup(user, sourceCard as HTMLElement)
+    await user.clear(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'))
+    await user.type(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'), publicSourceUrl)
+    await user.click(within(sourceCard as HTMLElement).getByRole('button', { name: 'Test source' }))
+    expect(await within(sourceCard as HTMLElement).findByLabelText('Connection status ready')).toBeInTheDocument()
+
+    const runtimeCard = await addRuntime(user, 'Custom A2A')
+    await openRuntimeSetup(user, runtimeCard as HTMLElement)
+    await user.clear(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'))
+    await user.type(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'), customA2aRuntimeUrl)
+    await user.click(within(runtimeCard as HTMLElement).getByRole('button', { name: 'Test runtime' }))
+    expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
+    await user.click(within(runtimeCard as HTMLElement).getByRole('radio', { name: /Custom A2A/ }))
+
+    await user.type(screen.getByLabelText('Question'), 'First runtime history question')
+    await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
+    expect((await screen.findAllByText('Runtime answer 1.')).length).toBeGreaterThan(0)
+
+    await user.type(screen.getByLabelText('Question'), 'Second runtime history question')
+    await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
+    expect((await screen.findAllByText('Runtime answer 2.')).length).toBeGreaterThan(0)
+
+    const firstData = runtimeBodies[0].data as Record<string, unknown>
+    const secondData = runtimeBodies[1].data as Record<string, unknown>
+    const firstContext = firstData.runtimeContext as { conversation: Record<string, unknown> }
+    const secondContext = secondData.runtimeContext as { conversation: Record<string, unknown> }
+
+    expect(firstData.messages).toEqual([
+      { role: 'user', content: 'First runtime history question' },
+    ])
+    expect(secondData.messages).toEqual([
+      { role: 'user', content: 'First runtime history question' },
+      { role: 'assistant', content: 'Runtime answer 1.' },
+      { role: 'user', content: 'Second runtime history question' },
+    ])
+    expect(secondData.query).toBe('Second runtime history question')
+    expect(secondData.sessionId).toEqual(firstData.sessionId)
+    expect(secondData.threadId).toEqual(firstData.threadId)
+    expect(secondData.turnId).not.toEqual(firstData.turnId)
+    expect(secondContext.conversation).toMatchObject({
+      schemaVersion: 'llmwiki-chat.conversation.v1',
+      sessionId: secondData.sessionId,
+      threadId: secondData.threadId,
+      turnId: secondData.turnId,
+      historyLength: 2,
+      messagesIncluded: 3,
+      latestRole: 'user',
+    })
+    expect(firstContext.conversation).toMatchObject({
+      historyLength: 0,
+      messagesIncluded: 1,
+      latestRole: 'user',
+    })
   })
 
   it('resets the chat thread while preserving selected source and runtime setup', async () => {

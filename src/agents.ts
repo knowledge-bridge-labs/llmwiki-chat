@@ -12,4 +12,5 @@ export {
   type AgentRuntimeClient,
   type AgentRuntimeDefinition,
   type AgentRuntimeEndpoint,
+  type AgentRuntimeRequestLog,
 } from './agentRuntimes'
