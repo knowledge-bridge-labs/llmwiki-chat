@@ -25,9 +25,11 @@ Before publishing a versioned release:
 2. Run the baseline public validation gates:
 
    ```bash
+   npm ci
    npm run lint
    npm run typecheck
    npm run test
+   npx playwright install --with-deps chromium
    npm run test:e2e
    npm run test:e2e:a2a-runtime
    npm run build
@@ -81,5 +83,35 @@ Before publishing a versioned release:
 Before publishing to npm, run the central package-publication gate documented
 in the sibling `llmwiki-docs` repository and confirm the toolchain release
 status is at least `public-unpublished`.
+If packages are being published sequentially, use the central staging preflight
+or a package-specific registry expectation until the status matrix has a mode
+for the current partial state.
+
+## npm Trusted Publishing
+
+Configure npm Trusted Publishing on npmjs.com for:
+
+- Package: `llmwiki-chat`
+- Publisher: GitHub Actions
+- GitHub organization/user: `knowledge-bridge-labs`
+- Repository: `llmwiki-chat`
+- Workflow filename: `publish.yml`
+- GitHub environment: `npm`
+- Allowed action: `npm publish`
+
+The workflow lives at `.github/workflows/publish.yml`, runs on
+`workflow_dispatch` and published GitHub releases, uses the `npm` environment,
+grants only `contents: read` and `id-token: write`, runs on GitHub-hosted
+Ubuntu with Node 24, installs with `npm ci`, runs lint, typecheck, unit tests,
+Playwright Chromium E2E tests, the release package gate, and audit, then runs
+plain `npm publish` with lifecycle scripts enabled.
+
+Do not add token-based publishing secrets to this workflow. Trusted Publishing
+uses GitHub Actions OIDC for tokenless publishing.
+
+If npm requires the package to already exist before adding the trusted publisher
+relationship, a maintainer may need to create the initial public package or
+package settings manually with npm 2FA. Do not commit credentials or tokens as
+a workaround.
 
 Security support remains defined in `SECURITY.md`.
