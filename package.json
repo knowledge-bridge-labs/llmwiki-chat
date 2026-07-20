@@ -58,6 +58,7 @@
     "test:e2e:live": "node scripts/run-live-serve-e2e.mjs",
     "test:e2e:sample-matrix": "node scripts/run-sample-graph-matrix-e2e.mjs",
     "test:e2e:sample-matrix:bridge": "node scripts/run-sample-graph-matrix-e2e.mjs --bridge",
+    "test:e2e:approval-matrix": "npm run test:e2e:sample-matrix:bridge && npm run test:e2e:live && npm run test:e2e:a2a-runtime",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

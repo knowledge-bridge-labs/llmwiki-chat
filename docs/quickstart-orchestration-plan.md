@@ -1,19 +1,22 @@
 # LLMWiki Chat Quickstart Orchestration Plan
 
-Status: planning draft
+Status: MVP implemented for browser-guided setup; managed local process
+automation remains follow-up
 Owner: llmwiki-chat / llmwiki-agent-bridge / llmwiki-serve
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 ## Goal
 
 Make the first-run path work from `llmwiki-chat` with one visible quickstart
-entry point:
+entry point. The current MVP is browser-guided: it shows safe commands and runs
+source/runtime probes after the user starts local services. It does not install
+packages or launch local processes from the browser.
 
 1. detect local `llmwiki-agent-bridge` and `llmwiki-serve` status,
-2. start a default sample wiki when no source is configured,
+2. show commands for starting a default sample wiki when no source is configured,
 3. allow the user to select a local wiki path,
 4. register that source with the bridge,
-5. verify the runtime/source path with a smoke test,
+5. verify the runtime/source path with smoke tests,
 6. enter chat with working grounded answers.
 
 The button in `llmwiki-chat` should feel like "start LLMWiki", but process
@@ -27,7 +30,7 @@ Open llmwiki-chat
 → Start Quickstart
 → Detect bridge / serve / runtime
 → Choose sample wiki or local wiki path
-→ Start or reuse llmwiki-serve
+→ Start or reuse llmwiki-serve in a trusted shell
 → Register source in llmwiki-agent-bridge
 → Verify health, source bundle, and message send
 → Start chat
@@ -60,7 +63,7 @@ local-only setup surface exposed by a trusted helper.
 
 ## Proposed Local Setup API
 
-Initial API surface on `llmwiki-agent-bridge`:
+Future API surface on `llmwiki-agent-bridge`:
 
 ```text
 GET  /quickstart/status
@@ -76,13 +79,14 @@ redacted diagnostics.
 
 ## MVP Scope
 
-MVP should avoid installer automation. It should only reuse installed tools and
-provide a reliable local path:
+MVP avoids installer automation. It only reuses installed tools and provides a
+reliable local path:
 
 - detect bridge status,
-- detect or start sample `llmwiki-serve`,
-- register sample source,
-- run smoke test,
+- show commands for sample `llmwiki-serve`,
+- test the selected sample source,
+- test the local bridge when it is running,
+- let the user switch to Local Development Runtime for deterministic UI checks,
 - enter chat.
 
 ## Follow-Up Scope
@@ -123,13 +127,14 @@ Quickstart is successful only when all checks pass:
 
 ## Implementation Sequence
 
-1. Add read-only quickstart status API to `llmwiki-agent-bridge`.
-2. Add `llmwiki-chat` Quickstart panel using existing settings/source APIs.
-3. Add sample source start/reuse support.
-4. Add verification workflow and UI status.
-5. Add user wiki path support.
-6. Add optional Hermes/DeepAgents install/start flows.
-7. Add cache/metrics visibility for runtime prefix cache and bridge/serve cache.
+1. Add `llmwiki-chat` Quickstart panel using existing source/runtime discovery.
+2. Add sample source reuse/test support.
+3. Add e2e matrix coverage for local, global, graph, and multi-source flows.
+4. Add read-only quickstart status API to `llmwiki-agent-bridge`.
+5. Add managed sample source start/reuse support after the setup API exists.
+6. Add user wiki path support.
+7. Add optional Hermes/DeepAgents install/start flows.
+8. Add cache/metrics visibility for runtime prefix cache and bridge/serve cache.
 
 ## Open Questions
 

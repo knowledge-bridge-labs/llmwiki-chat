@@ -389,6 +389,23 @@ test('disables suggested prompts with the same inline reason for an unavailable 
   await expect(page.getByLabel('Hermes run details')).toHaveCount(0)
 })
 
+test('shows browser-safe quickstart commands and reuses source checks', async ({ page }) => {
+  await page.goto('/')
+
+  const quickstart = page.getByRole('region', { name: 'Quickstart' })
+  await expect(quickstart).toBeVisible()
+  await expect(quickstart.getByRole('heading', {
+    name: 'Start services in a shell, then verify them here.',
+  })).toBeVisible()
+  await expect(quickstart).toContainText('cannot install packages, start local processes')
+  await expect(quickstart).toContainText('llmwiki-serve==0.2.0')
+  await expect(quickstart).toContainText('llmwiki-agent-bridge@0.1.0')
+  await expect(quickstart).toContainText('/path/to/wiki')
+
+  await quickstart.getByRole('button', { name: 'Test sample source' }).click()
+  await expect(page.getByRole('article').filter({ hasText: 'Sample Packaging LLMWiki' }).getByLabel('Connection status ready')).toBeVisible()
+})
+
 test('labels suggested prompts as ask actions and clears the composer when they run', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()

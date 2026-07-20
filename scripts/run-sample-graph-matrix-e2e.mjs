@@ -33,18 +33,24 @@ const sampleCases = [
     name: 'Sample wiki',
     relativeRoot: join('examples', 'sample-wiki'),
     query: 'required copy release readiness',
+    queryClass: 'local-query',
+    fixtureClasses: ['local-single-source', 'sample-wiki'],
   },
   {
     id: 'obsidian-vault',
     name: 'Obsidian vault fixture',
     relativeRoot: join('tests', 'fixtures', 'obsidian-vault'),
     query: 'release checklist final approval product process',
+    queryClass: 'global-query',
+    fixtureClasses: ['obsidian-vault', 'frontmatter-links'],
   },
   {
     id: 'llmwiki-compiler-output',
     name: 'Compiler output fixture',
     relativeRoot: join('tests', 'fixtures', 'llmwiki-compiler-output'),
     query: 'release readiness packaging topic',
+    queryClass: 'graph-query',
+    fixtureClasses: ['llmwiki-compiler-output', 'graph-relation'],
   },
 ]
 
@@ -115,7 +121,14 @@ async function startServeMatrix() {
     console.log(`[sample-matrix] Starting ${source.id} at ${url}`)
     const child = startServeProcess(serveRoot, source.root, port)
     serveProcesses.push(child)
-    liveSources.push({ id: source.id, name: source.name, query: source.query, url })
+    liveSources.push({
+      id: source.id,
+      name: source.name,
+      query: source.query,
+      queryClass: source.queryClass,
+      fixtureClasses: source.fixtureClasses,
+      url,
+    })
   }
 
   await Promise.all(liveSources.map((source, index) => waitForHealth(`${source.url}/health`, serveProcesses[index], 'llmwiki-serve')))
