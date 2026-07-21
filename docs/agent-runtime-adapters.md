@@ -531,6 +531,19 @@ are not collapsed. Direct Playwright runs of `e2e/live-serve.spec.ts` are still
 skipped by default without `LLMWIKI_LIVE_SERVE_URL` or
 `LLMWIKI_LIVE_SERVE_URLS`; use the package script for the provisioned live smoke.
 
+For browser-to-bridge multi-turn runtime context changes, run:
+
+```bash
+npm run test:e2e:bridge-multiturn
+```
+
+The command provisions a real local `llmwiki-serve` sample source, a real
+`llmwiki-agent-bridge` process from a sibling checkout, and a test-only
+OpenAI-compatible chat-completions server. The Playwright check verifies three
+browser turns, stable thread/session/A2A context identifiers, bounded prior
+history in the bridge runtime prompt, no duplicate current query in prior
+history, and source requests that do not carry prior assistant answers.
+
 ## Endpoint Compatibility Notes
 
 The HTTP knowledge adapter expects:

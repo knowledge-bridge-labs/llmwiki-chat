@@ -13,5 +13,6 @@
 ```sh
 npm run typecheck
 npx vitest run src/agentRuntimes.test.ts src/App.test.tsx
+npm run test:e2e:bridge-multiturn
 npm run check
 ```
