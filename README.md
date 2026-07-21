@@ -161,6 +161,11 @@ pages, and details`. It uses sanitized loopback sample values and does not show
 a connected production runtime, private Knowledge Source, raw logs, or managed
 backend automation.
 
+Regenerate the README/docs screenshots with `npm run docs:capture-screenshots`.
+The command runs the local Vite app against sanitized sample responses and
+updates `docs/assets/llmwiki-chat-workbench.png` plus the Quickstart-open
+reference image.
+
 ## Workbench Modes
 
 | Mode | Use when | What to verify |

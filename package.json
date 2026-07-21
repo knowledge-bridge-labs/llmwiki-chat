@@ -47,6 +47,8 @@
     "prepack": "npm run build:release",
     "pack:dry-run": "npm run build:release && npm run licenses:check && npm pack --dry-run --json --ignore-scripts",
     "check": "npm run lint && npm run typecheck && npm run test && npm run test:e2e && npm run build && npm run pack:dry-run && npm audit --audit-level=moderate",
+    "docs:capture-screenshots": "node scripts/capture-docs-screenshots.mjs",
+    "docs:check-screenshots": "node scripts/capture-docs-screenshots.mjs --check",
     "licenses:generate": "node scripts/generate-third-party-licenses.mjs production THIRD_PARTY_LICENSES.md",
     "licenses:check": "node scripts/generate-third-party-licenses.mjs production THIRD_PARTY_LICENSES.md --check",
     "licenses:copy": "node scripts/copy-license-artifacts.mjs",
