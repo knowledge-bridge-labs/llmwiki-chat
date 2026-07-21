@@ -1,6 +1,6 @@
 {
   "name": "llmwiki-chat",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": false,
   "type": "module",
   "description": "Accessible Agent Runtime console for Markdown/wiki Knowledge Source endpoints.",
@@ -58,6 +58,7 @@
     "test:e2e:live": "node scripts/run-live-serve-e2e.mjs",
     "test:e2e:sample-matrix": "node scripts/run-sample-graph-matrix-e2e.mjs",
     "test:e2e:sample-matrix:bridge": "node scripts/run-sample-graph-matrix-e2e.mjs --bridge",
+    "test:e2e:approval-matrix": "npm run test:e2e:sample-matrix:bridge && npm run test:e2e:live && npm run test:e2e:a2a-runtime",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
@@ -68,6 +69,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",

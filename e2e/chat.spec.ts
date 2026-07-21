@@ -1,7 +1,18 @@
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { routeSamplePackagingWiki } from './support/samplePackagingWiki'
 
 const externalRuntimeSourceUrlAdvisoryMessage = 'Warning: selected ready Knowledge Source URLs include HTTP, private, or non-public hosts. External runtimes may not be able to reach them; public or strict deployments should use public HTTPS sources or enforce runtime/proxy allowlists.'
+const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
+const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
+const localIoLogStorageKey = 'llmwiki-chat:local-io-log:v1'
+const localIoLoggingPreferenceStorageKey = 'llmwiki-chat:local-io-logging-enabled:v1'
+const coldStartStorageKeys = [
+  knowledgeSourceStorageKey,
+  agentRuntimeStorageKey,
+  localIoLogStorageKey,
+  localIoLoggingPreferenceStorageKey,
+]
 
 test.beforeEach(async ({ page }) => {
   await routeSamplePackagingWiki(page, 'http://127.0.0.1:8765')
@@ -21,6 +32,147 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('cold-start no-services first-time screen stays calm', async ({ page }) => {
+  await isolateColdStartNoLocalServices(page)
+  await page.goto('/')
+  await clearColdStartStorage(page)
+
+  await expect(page.locator('.app-shell')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ask Local sample LLMWiki' })).toBeVisible()
+  await expect(page.locator('.message.user')).toHaveCount(0)
+  await expect(page.locator('.message.assistant')).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+
+  const localSummary = page.getByLabel('Local sample source and runtime')
+  await expect(localSummary).toContainText('Local sample LLMWiki')
+  await expect(localSummary).toContainText('local sample endpoint · 0 ready')
+  await expect(localSummary).toContainText('Local Development Runtime')
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
+  await expect(page.locator('#ask-status')).toHaveText('Some selected Knowledge Sources need attention. Review the error, retry failed sources, or deselect them.')
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeDisabled()
+
+  await expect(page.getByRole('button', { name: 'Inspect map, pages, and details' })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('region', { name: 'Graph' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Pages' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
+  await expect(page.getByRole('checkbox', { name: /Local I\/O logging/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Copy JSONL' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Clear local I/O log' })).toBeHidden()
+  await expect(page.getByRole('radio', { name: /Hermes/ })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: /DeepAgents/ })).toHaveCount(0)
+
+  await openKnowledgeSourcesSection(page)
+  const sampleSource = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('checkbox', { name: 'Local sample LLMWiki' }) })
+  await expect(sampleSource.getByLabel('Connection status error')).toBeVisible()
+  await expect(sampleSource).toContainText('Last source test failed. Review the error and test again.')
+  await expect(sampleSource.getByRole('button', { name: 'Test source' })).toBeEnabled()
+
+  await openAddSource(page)
+  await expect(page.getByLabel('Name')).toBeVisible()
+  await expect(page.getByLabel('Protocol')).toContainText('LLMWiki HTTP')
+  await expect(page.getByLabel('New connection URL')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create source' })).toBeVisible()
+
+  const quickstartToggle = page.getByRole('button', { name: 'Show Quickstart' })
+  await expect(quickstartToggle).toHaveAttribute('aria-expanded', 'false')
+  await quickstartToggle.click()
+  const quickstart = page.getByRole('region', { name: 'Quickstart' })
+  await expect(quickstart).toBeVisible()
+  const sourceStep = quickstart.getByRole('region', { name: 'Step 1 source setup' })
+  await expect(sourceStep).toContainText('If this check fails or stays unknown')
+  await page.setViewportSize({ width: 500, height: 720 })
+  await quickstart.getByText('Show llmwiki-serve commands').click()
+  await expect(quickstart).toContainText('uvx --from llmwiki-serve==0.2.0')
+  await expectQuickstartPanelNoHorizontalOverflow(page)
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expect(quickstart.getByRole('region', { name: 'Step 2 runtime choice' })).toHaveCount(0)
+  await expect(quickstart.getByRole('region', { name: 'Optional bridge runtime steps' })).toHaveCount(0)
+  await expect(quickstart.getByRole('button', { name: 'Use Local Development Runtime' })).toHaveCount(0)
+  await expect(quickstart.getByRole('button', { name: 'Test local bridge' })).toHaveCount(0)
+  await expect(quickstart).not.toContainText('Hermes')
+  await expect(quickstart).not.toContainText('DeepAgents')
+  await sourceStep.getByRole('button', { name: 'Test sample source' }).click()
+  await expect(sampleSource.getByLabel('Connection status error')).toBeVisible()
+  await expect(sourceStep.getByLabel('Quickstart source status')).toContainText('error')
+  await expect(sourceStep).toContainText('If this check fails or stays unknown')
+  await expect(quickstart.getByRole('region', { name: 'Step 2 runtime choice' })).toHaveCount(0)
+  await sourceStep.getByRole('button', { name: 'Close Quickstart' }).click()
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Show Quickstart' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('cold-start no-services advanced runtime accident recovers to serve-only', async ({ page }) => {
+  let sourceAvailable = false
+  const corsHeaders = {
+    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Origin': '*',
+  }
+  await page.addInitScript((storageKeys) => {
+    for (const key of storageKeys as string[]) {
+      window.localStorage.removeItem(key)
+    }
+  }, coldStartStorageKeys)
+  await page.unroute('http://127.0.0.1:8765/manifest')
+  await page.route('http://127.0.0.1:8765/manifest', async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders })
+      return
+    }
+    if (!sourceAvailable) {
+      await route.fulfill({ status: 404, headers: corsHeaders, body: 'source missing' })
+      return
+    }
+    await route.fulfill({
+      headers: corsHeaders,
+      json: {
+        title: 'Sample Packaging LLMWiki',
+        description: 'Synthetic packaging operations knowledge base.',
+        adapter: 'llmwiki-markdown',
+        implementation: 'atomicstrata/llm-wiki-compiler',
+        page_count: 4,
+        approved_page_count: 4,
+      },
+    })
+  })
+  await routeLocalServiceUnavailable(page, 'http://127.0.0.1:8788/**')
+  await routeLocalServiceUnavailable(page, 'http://localhost:8788/**')
+
+  await page.goto('/')
+  await clearColdStartStorage(page)
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Show Quickstart' }).click()
+  const quickstart = page.getByRole('region', { name: 'Quickstart' })
+  const sourceStep = quickstart.getByRole('region', { name: 'Step 1 source setup' })
+  await expect(sourceStep).toContainText('If this check fails or stays unknown')
+  await expect(quickstart.getByRole('region', { name: 'Step 2 runtime choice' })).toHaveCount(0)
+
+  sourceAvailable = true
+  await sourceStep.getByRole('button', { name: 'Test sample source' }).click()
+  await expect(page.getByRole('article').filter({ hasText: 'Sample Packaging LLMWiki' }).getByLabel('Connection status ready')).toBeVisible()
+  const runtimeStep = quickstart.getByRole('region', { name: 'Step 2 runtime choice' })
+  await expect(runtimeStep).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+  await page.getByLabel('Question').fill('What is in this wiki?')
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeEnabled()
+
+  const hermesCard = await addRuntime(page, 'Hermes')
+  await selectRuntimeCard(hermesCard)
+  const reason = 'Select or configure Hermes so it can be checked, or choose a ready runtime.'
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
+  await expect(page.getByText(reason).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeDisabled()
+  await expect(runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
+
+  await runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' }).click()
+  await expect(page.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+})
+
 test('answers a selected LLMWiki query with citations and graph context', async ({ page, isMobile }) => {
   await page.goto('/')
 
@@ -33,12 +185,23 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   await expect(endpointMetadata).not.toHaveAttribute('open', '')
   await localSummary.getByText('Runtime and endpoint details').click()
   await expect(localSummary.getByText('http://127.0.0.1:8765')).toBeVisible()
-  await expect(page.locator('.add-runtime-disclosure')).toHaveAttribute('open', '')
+  await expect(page.locator('.add-runtime-disclosure')).not.toHaveAttribute('open', '')
+  await expect(page.getByLabel('Runtime type')).toBeHidden()
   await expect(page.getByRole('radio', { name: /Hermes/ })).toHaveCount(0)
+  await expect(page.getByRole('checkbox', { name: /Local I\/O logging/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Copy JSONL' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Clear local I/O log' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Inspect map, pages, and details' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Graph' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Pages' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await expect(page.getByText('llmwiki-markdown')).toHaveCount(1)
   await expect(page.getByText('atomicstrata/llm-wiki-compiler')).toHaveCount(1)
-  await expect(page.getByLabel('Agent runtime status ready')).toBeVisible()
+  const localDevelopmentRuntimeCard = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('radio', { name: /Local Development Runtime/ }) })
+  await expect(localDevelopmentRuntimeCard.getByLabel('Agent runtime status ready')).toBeVisible()
   await expect(
     page
       .getByRole('article')
@@ -82,6 +245,11 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   const inlineCitation = latestAssistant.getByRole('button', { name: 'Citation 1: Current Focus' }).first()
   await expect(inlineCitation).toBeVisible()
   await expect(page.getByRole('button', { name: /\[1\] Current Focus/ })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
+  await inlineCitation.click()
+  await expect(page.getByRole('button', { name: /\[1\] Current Focus/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.selected-node')).toHaveCount(1)
+  if (!isMobile) await expectDetailsInsideInspectorViewport(page)
   const citationEvidence = page.getByLabel('Citation evidence')
   await expect(citationEvidence.getByText('Current Focus', { exact: true })).toBeVisible()
   await expect(citationEvidence.getByText('Required label copy and release readiness are current focus items.')).toBeVisible()
@@ -92,11 +260,6 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   await expect(details.getByText('Related context')).toBeVisible()
   await details.getByText('Related context').click()
   await expect(details.getByRole('button', { name: /Artwork Review Process topic/ })).toBeVisible()
-
-  await inlineCitation.click()
-  await expect(page.getByRole('button', { name: /\[1\] Current Focus/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('.selected-node')).toHaveCount(1)
-  if (!isMobile) await expectDetailsInsideInspectorViewport(page)
 
   await page.getByLabel('Select graph node Current Focus (hot)').click()
   await expect(page.getByRole('region', { name: 'Details' }).getByText('Headings')).toBeVisible()
@@ -139,12 +302,12 @@ test('keeps answer scope and evidence graph clear when source selection changes 
   await page.getByLabel('New connection URL').fill('http://127.0.0.1:8766')
   await page.getByRole('button', { name: 'Create source' }).click()
   await expect(page.getByRole('checkbox', { name: 'Team Wiki' })).toBeChecked()
-  await expect(page.getByRole('button', { name: 'Ask 2 sources' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected sources' })).toBeDisabled()
   await expect(page.locator('#ask-status')).toHaveText('Some selected Knowledge Sources need attention. Review the error, retry failed sources, or deselect them.')
   await page.getByRole('checkbox', { name: 'Team Wiki' }).uncheck()
 
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   const runDetails = latestAssistant.getByLabel('Local Development Runtime run details')
@@ -164,6 +327,7 @@ test('keeps answer scope and evidence graph clear when source selection changes 
   const knowledgeMap = page.getByRole('region', { name: 'Knowledge map' })
   await expect(knowledgeMap).toContainText('Selected answer evidence')
   await expect(knowledgeMap).toContainText('Showing the selected answer evidence graph; current selected sources are different.')
+  await openInspectorDetails(page)
   await expect(page.getByRole('region', { name: 'Graph' }).getByLabel('Knowledge graph overview')).toBeVisible()
   await expect(runDetails).toContainText('Sample Packaging LLMWiki · llmwiki-http')
 
@@ -180,13 +344,13 @@ test('reveals the start of a completed answer on mobile', async ({ page, isMobil
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await page.getByLabel('Question').fill('What needs review?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByLabel('Question')).toHaveValue('')
 
   await expect(page.locator('.message.assistant')).toContainText('Grounded answer')
 
   await page.getByLabel('Question').fill('Show current focus')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Grounded answer')
 
@@ -255,7 +419,7 @@ test('prioritizes source-first mobile first viewport', async ({ page, isMobile }
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Ask Sample Packaging LLMWiki' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Suggested prompts' })).toBeVisible()
   await expect(page.locator('.connection-status-details')).not.toHaveAttribute('open', '')
   await expect(page.getByRole('button', { name: 'Review sources' })).toBeHidden()
@@ -293,7 +457,7 @@ test('moves mobile citation selection to the Details panel', async ({ page, isMo
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await page.getByLabel('Question').fill('Show current focus')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Grounded answer')
@@ -348,7 +512,7 @@ test('keeps the tablet composer visible without horizontal overflow', async ({ p
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await page.getByLabel('Question').fill('What needs review?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.locator('.message.assistant').last()).toContainText('Grounded answer')
 
   const metrics = await page.evaluate(() => {
@@ -375,7 +539,7 @@ test('disables suggested prompts with the same inline reason for an unavailable 
   await selectRuntimeCard(runtimeCard)
 
   const reason = 'Select or configure Hermes so it can be checked, or choose a ready runtime.'
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
   await expect(page.getByText(reason).first()).toBeVisible()
   const promptButtons = page.getByRole('group', { name: 'Suggested prompts' }).getByRole('button')
   await expect(promptButtons).toHaveCount(3)
@@ -387,6 +551,166 @@ test('disables suggested prompts with the same inline reason for an unavailable 
   await page.getByLabel('Question').press('Enter')
   await expect(page.getByText(reason).first()).toBeVisible()
   await expect(page.getByLabel('Hermes run details')).toHaveCount(0)
+})
+
+test('shows browser-safe quickstart commands and reuses source checks', async ({ page }) => {
+  let sourceAvailable = false
+  const corsHeaders = {
+    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Origin': '*',
+  }
+  await page.unroute('http://127.0.0.1:8765/manifest')
+  await page.route('http://127.0.0.1:8765/manifest', async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders })
+      return
+    }
+    if (!sourceAvailable) {
+      await route.fulfill({ status: 404, headers: corsHeaders, body: 'source missing' })
+      return
+    }
+    await route.fulfill({
+      headers: corsHeaders,
+      json: {
+        title: 'Sample Packaging LLMWiki',
+        description: 'Synthetic packaging operations knowledge base.',
+        adapter: 'llmwiki-markdown',
+        implementation: 'atomicstrata/llm-wiki-compiler',
+        page_count: 4,
+        approved_page_count: 4,
+      },
+    })
+  })
+  await page.route('http://127.0.0.1:8788/.well-known/agent-card.json', async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders })
+      return
+    }
+    await route.fulfill({ status: 404, headers: corsHeaders, body: 'bridge missing' })
+  })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/')
+
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+  const quickstartToggle = page.getByRole('button', { name: 'Show Quickstart' })
+  await expect(quickstartToggle).toHaveAttribute('aria-expanded', 'false')
+  await quickstartToggle.click()
+  await expect(page.getByRole('button', { name: 'Hide Quickstart' })).toHaveAttribute('aria-expanded', 'true')
+
+  const quickstart = page.getByRole('region', { name: 'Quickstart' })
+  await expect(quickstart).toBeVisible()
+  await expect(quickstart).toBeFocused()
+  await expect(quickstart.getByRole('heading', {
+    name: 'Step 1: connect llmwiki-serve.',
+  })).toBeVisible()
+  await expect(quickstart).toContainText('cannot install packages, start local processes')
+  await expect(quickstart).toContainText('For a first pass, you only need llmwiki-serve')
+  const sourceStep = quickstart.getByRole('region', { name: 'Step 1 source setup' })
+  await expect(sourceStep).toBeVisible()
+  await expect(sourceStep.getByRole('button', { name: 'Test sample source' })).toBeVisible()
+  await expect(sourceStep).toContainText('If this check fails or stays unknown')
+  await expect(quickstart.getByRole('region', { name: 'Step 2 runtime choice' })).toHaveCount(0)
+  await expect(quickstart.getByRole('button', { name: 'Test local bridge' })).toHaveCount(0)
+  await expect(quickstart).not.toContainText('Hermes')
+  await expect(quickstart).not.toContainText('DeepAgents')
+  await expect(quickstart).not.toContainText('llmwiki-agent-bridge@0.1.0')
+  await expect(quickstart).toContainText('llmwiki-serve==0.2.0')
+  await expect(quickstart).toContainText('/path/to/wiki')
+
+  await page.setViewportSize({ width: 500, height: 720 })
+  await quickstart.getByText('Show llmwiki-serve commands').click()
+  await expectQuickstartPanelNoHorizontalOverflow(page)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  sourceAvailable = true
+  await sourceStep.getByRole('button', { name: 'Test sample source' }).click()
+  await expect(page.getByRole('article').filter({ hasText: 'Sample Packaging LLMWiki' }).getByLabel('Connection status ready')).toBeVisible()
+  const runtimeStep = quickstart.getByRole('region', { name: 'Step 2 runtime choice' })
+  await expect(runtimeStep).toBeVisible()
+  await expect(runtimeStep).toContainText('Default: use Local Development Runtime')
+  await expect(runtimeStep).toContainText('Serve-only path is ready')
+  await expect(runtimeStep.getByRole('button', { name: 'Continue serve-only' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+  await expect(runtimeStep.getByRole('button', { name: 'Show optional bridge/runtime steps' })).toHaveAttribute('aria-expanded', 'false')
+  await expect(runtimeStep.getByRole('button', { name: 'Test local bridge' })).toHaveCount(0)
+  await expect(runtimeStep).not.toContainText('Hermes')
+  await expect(runtimeStep).not.toContainText('DeepAgents')
+
+  await runtimeStep.getByRole('button', { name: 'Show optional bridge/runtime steps' }).click()
+  const advancedRuntime = runtimeStep.getByRole('region', { name: 'Optional bridge runtime steps' })
+  await expect(advancedRuntime).toBeVisible()
+  await expect(advancedRuntime).toContainText('No bridge or LLM endpoint? Skip this')
+  await expect(advancedRuntime).toContainText('Hermes, DeepAgents, or OpenAI-compatible runtimes')
+  await expect(advancedRuntime.getByRole('link', { name: 'Quickstart docs' })).toHaveAttribute(
+    'href',
+    'https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart',
+  )
+  await expect(advancedRuntime.getByRole('link', { name: 'Runtime adapter notes' })).toHaveAttribute(
+    'href',
+    'https://knowledge-bridge-labs.github.io/llmwiki-docs/runtime-adapters',
+  )
+  await expect(advancedRuntime.getByRole('link', { name: 'Agent Bridge README' })).toHaveAttribute(
+    'href',
+    'https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge#readme',
+  )
+  await expect(advancedRuntime.getByRole('button', { name: 'Test local bridge' })).toBeVisible()
+  await advancedRuntime.getByRole('button', { name: 'Test local bridge' }).click()
+  await expect(page.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+  await expect(advancedRuntime).toContainText('Bridge test failed')
+  await expect(advancedRuntime).toContainText('Start or restart llmwiki-agent-bridge')
+  await expect(advancedRuntime).toContainText('confirm http://127.0.0.1:8788')
+  await expect(advancedRuntime).toContainText('skip/continue serve-only')
+  await expect(advancedRuntime).toContainText('No bridge or LLM endpoint? Skip this')
+  await expect(runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
+  await runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' }).click()
+  await expect(page.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+  await expectQuickstartStatusInsidePanel(page)
+
+  await page.setViewportSize({ width: 500, height: 720 })
+  await expectQuickstartStatusInsidePanel(page)
+  await advancedRuntime.getByRole('button', { name: 'Skip and close' }).click()
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+})
+
+test('quickstart states pass focused accessibility scans', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/')
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+  await expectNoAxeViolations(page, 'default app shell', '.app-shell')
+
+  await openInspectorDetails(page)
+  await expectNoAxeViolations(page, 'inspector details open', '.inspector')
+
+  await openAgentBridgeSection(page)
+  await page.locator('.add-runtime-disclosure summary').click()
+  await expect(page.getByLabel('Runtime type')).toBeVisible()
+  await expectNoAxeViolations(page, 'runtime add disclosure open', '.sidebar')
+
+  await page.getByRole('region', { name: 'Local I/O log', exact: true }).locator('.local-io-log-panel-header').click()
+  await expect(page.getByRole('button', { name: 'Copy JSONL' })).toBeVisible()
+  await expectNoAxeViolations(page, 'local I/O log open', '.inspector')
+  await page.setViewportSize({ width: 500, height: 720 })
+  await expectAppShellNoHorizontalOverflow(page)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  await page.getByRole('button', { name: 'Show Quickstart' }).click()
+  const quickstart = page.getByRole('region', { name: 'Quickstart' })
+  await expect(quickstart).toBeVisible()
+  await expectNoAxeViolations(page, 'opened quickstart', '#quickstart-panel')
+
+  await page.setViewportSize({ width: 500, height: 720 })
+  await quickstart.getByText('Show llmwiki-serve commands').click()
+  await expectQuickstartPanelNoHorizontalOverflow(page)
+  await expectNoAxeViolations(page, 'mobile quickstart with source commands', '#quickstart-panel')
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const runtimeStep = quickstart.getByRole('region', { name: 'Step 2 runtime choice' })
+  await expect(runtimeStep).toBeVisible()
+  await runtimeStep.getByRole('button', { name: 'Show optional bridge/runtime steps' }).click()
+  await expect(runtimeStep.getByRole('region', { name: 'Optional bridge runtime steps' })).toBeVisible()
+  await expectNoAxeViolations(page, 'advanced quickstart', '#quickstart-panel')
 })
 
 test('labels suggested prompts as ask actions and clears the composer when they run', async ({ page }) => {
@@ -405,6 +729,10 @@ test('labels suggested prompts as ask actions and clears the composer when they 
 test('loads graph, nodes, and details from graph endpoint before querying', async ({ page }) => {
   await page.goto('/')
 
+  await expect(page.getByRole('region', { name: 'Graph' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Pages' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
+  await openInspectorDetails(page)
   await expect(page.getByRole('region', { name: 'Graph' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Pages' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Details' })).toBeVisible()
@@ -418,6 +746,7 @@ test('shows selected graph page details without prompt shortcut actions', async 
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
 
+  await openInspectorDetails(page)
   const nodesPanel = page.getByRole('region', { name: 'Pages' })
   await nodesPanel.getByRole('button', { name: /Current Focus hot/ }).click()
 
@@ -437,6 +766,7 @@ test('shows an explicit graph empty state when selected sources are cleared', as
   await openKnowledgeSourcesSection(page)
   await page.getByRole('checkbox', { name: 'Sample Packaging LLMWiki' }).uncheck()
 
+  await openInspectorDetails(page)
   const graphPanel = page.getByRole('region', { name: 'Graph' })
   await expect(graphPanel.getByText('No map loaded yet.')).toBeVisible()
   await expect(graphPanel.getByText('Select and test a Knowledge Source to load page links.')).toBeVisible()
@@ -447,7 +777,7 @@ test('shows an explicit graph empty state when selected sources are cleared', as
 test('adds a second connection without losing the current thread', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByText(/Local Development Runtime used 1 knowledge source/)).toBeVisible()
 
   await openAddSource(page)
@@ -520,7 +850,7 @@ test('cancels a stalled run after source selection changes and keeps the next as
   await expect(page.getByRole('region', { name: 'Chat' })).toBeVisible()
 
   await page.getByLabel('Question').fill('First stalled question')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByRole('button', { name: 'Running agent...' })).toBeDisabled()
   await expect(page.getByText('Gathering evidence from the selected Knowledge Sources...')).toBeVisible()
 
@@ -534,7 +864,7 @@ test('cancels a stalled run after source selection changes and keeps the next as
 
   await page.getByRole('checkbox', { name: 'Sample Packaging LLMWiki' }).check()
   await page.getByLabel('Question').fill('Second question after switching')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Grounded answer')
   await expect(latestAssistant).toContainText('Second question after switching')
@@ -627,7 +957,7 @@ test('adds and queries an MCP knowledge source', async ({ page }) => {
   await readyMcpConnection.getByRole('button', { name: 'Use only this source' }).click()
 
   await page.getByLabel('Question').fill('What does MCP know?')
-  await page.getByRole('button', { name: 'Ask MCP Endpoint' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const toolTrace = page.getByLabel('Tool call trace')
   await expandAgentTrace(page.getByLabel('Local Development Runtime run details'))
@@ -700,9 +1030,9 @@ test('warns but allows a custom A2A Agent Runtime when selected LLMWiki sources 
   await expect(page.getByText(externalRuntimeSourceUrlAdvisoryMessage).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
   await page.getByLabel('Question').fill('Use the private HTTP source')
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeEnabled()
   await expect(page.locator('#ask-status')).toHaveText(externalRuntimeSourceUrlAdvisoryMessage)
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByLabel('Custom A2A run details')).toBeVisible()
   expect(runtimeMessagePostCalls).toBeGreaterThan(0)
 })
@@ -801,7 +1131,7 @@ test('uses a custom A2A Agent Runtime with selected LLMWiki sources', async ({ p
   await selectRuntimeCard(runtimeCard)
 
   await page.getByLabel('Question').fill('Use the external runtime')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('External runtime used selected LLMWiki sources')
@@ -846,9 +1176,11 @@ test('keeps Hermes explicitly selectable across add and remove cycles', async ({
   await page.goto('/')
   await expect(page.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
 
-  await openSidebarSection(page.getByRole('region', { name: 'Agent bridge' }))
+  await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
   const addRuntime = page.locator('.add-runtime-disclosure')
-  await expect(addRuntime).toHaveAttribute('open', '')
+  await expect(addRuntime).not.toHaveAttribute('open', '')
+  await expect(page.getByLabel('Runtime type')).toBeHidden()
+  await addRuntime.locator('summary').click()
   await expect(page.getByLabel('Runtime type')).toContainText('Hermes')
 
   await page.getByLabel('Runtime type').selectOption({ label: 'Hermes' })
@@ -996,7 +1328,7 @@ test('keeps completed run details above the answer and displays runtime evidence
   await selectRuntimeCard(runtimeCard)
 
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Runtime answer cites')
@@ -1035,7 +1367,7 @@ test('only selected knowledge sources appear in the agent tool trace', async ({ 
   await page.getByRole('checkbox', { name: 'Team Wiki' }).click()
 
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const toolTrace = page.getByLabel('Tool call trace')
   await expandAgentTrace(page.getByLabel('Local Development Runtime run details'))
@@ -1046,6 +1378,51 @@ test('only selected knowledge sources appear in the agent tool trace', async ({ 
 async function expandAgentTrace(runDetails: Locator): Promise<void> {
   const isOpen = await runDetails.evaluate((node) => (node as HTMLDetailsElement).open)
   if (!isOpen) await runDetails.locator('summary').click()
+}
+
+async function isolateColdStartNoLocalServices(page: Page): Promise<void> {
+  await Promise.all([
+    page.unroute('http://127.0.0.1:8765/manifest'),
+    page.unroute('http://127.0.0.1:8765/graph?limit=500'),
+    page.unroute('http://127.0.0.1:8765/query'),
+    page.unroute('http://127.0.0.1:8765/read/**'),
+  ])
+  await routeLocalServiceUnavailable(page, 'http://127.0.0.1:8765/**')
+  await routeLocalServiceUnavailable(page, 'http://localhost:8765/**')
+  await routeLocalServiceUnavailable(page, 'http://127.0.0.1:8788/**')
+  await routeLocalServiceUnavailable(page, 'http://localhost:8788/**')
+  await page.addInitScript((storageKeys) => {
+    for (const key of storageKeys as string[]) {
+      window.localStorage.removeItem(key)
+    }
+  }, coldStartStorageKeys)
+}
+
+async function routeLocalServiceUnavailable(page: Page, urlPattern: string): Promise<void> {
+  const corsHeaders = {
+    'Access-Control-Allow-Headers': 'content-type, authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Origin': '*',
+  }
+  await page.route(urlPattern, async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders })
+      return
+    }
+    await route.fulfill({
+      status: 404,
+      headers: corsHeaders,
+      body: 'local service unavailable for cold-start validation',
+    })
+  })
+}
+
+async function clearColdStartStorage(page: Page): Promise<void> {
+  await page.evaluate((storageKeys) => {
+    for (const key of storageKeys as string[]) {
+      window.localStorage.removeItem(key)
+    }
+  }, coldStartStorageKeys)
 }
 
 async function addRuntime(page: Page, runtimeName: string): Promise<Locator> {
@@ -1066,6 +1443,16 @@ async function openSourceRuntimeDetails(page: Page): Promise<void> {
   if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open))) {
     await details.locator('summary').click()
   }
+}
+
+async function openInspectorDetails(page: Page): Promise<void> {
+  const inspect = page.getByRole('button', { name: /(?:Inspect|Hide) map, pages, and details/ })
+  if ((await inspect.getAttribute('aria-expanded')) !== 'true') {
+    await inspect.click()
+  }
+  await expect(page.getByRole('region', { name: 'Graph' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Pages' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Details' })).toBeVisible()
 }
 
 async function openAddSource(page: Page): Promise<void> {
@@ -1106,7 +1493,7 @@ async function selectRuntimeCard(runtimeCard: Locator): Promise<void> {
 }
 
 async function openAgentBridgeSection(page: Page): Promise<void> {
-  await openSidebarSection(page.getByRole('region', { name: 'Agent bridge' }))
+  await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
 }
 
 async function openKnowledgeSourcesSection(page: Page): Promise<void> {
@@ -1119,6 +1506,103 @@ async function openSidebarSection(section: Locator): Promise<void> {
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   }
+}
+
+async function expectNoAxeViolations(page: Page, label: string, selector: string): Promise<void> {
+  const results = await new AxeBuilder({ page }).include(selector).analyze()
+  expect(
+    results.violations,
+    [
+      `${label} axe violations:`,
+      ...results.violations.map((violation) => {
+        const nodes = violation.nodes.map((node) => node.target.join(' ')).join(', ')
+        return `${violation.id}: ${violation.help} (${nodes})`
+      }),
+    ].join('\n'),
+  ).toEqual([])
+}
+
+async function expectQuickstartPanelNoHorizontalOverflow(page: Page): Promise<void> {
+  const metrics = await page.locator('.quickstart-panel').evaluate((panel) => {
+    const panelBox = panel.getBoundingClientRect()
+    const checkedElements = Array.from(panel.querySelectorAll(
+      '.quickstart-command-details, .quickstart-grid, .quickstart-grid > div, .quickstart-command',
+    ))
+
+    return {
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      panelLeft: panelBox.left,
+      panelRight: panelBox.right,
+      overflowingElements: checkedElements
+        .map((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: element.className,
+            text: element.textContent?.trim().slice(0, 80) || element.tagName.toLowerCase(),
+            left: box.left,
+            right: box.right,
+            panelLeft: panelBox.left,
+            panelRight: panelBox.right,
+          }
+        })
+        .filter((box) => box.left < panelBox.left - 1 || box.right > panelBox.right + 1),
+    }
+  })
+
+  expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
+  expect(metrics.panelLeft).toBeGreaterThanOrEqual(-1)
+  expect(metrics.panelRight).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
+  expect(metrics.overflowingElements).toEqual([])
+}
+
+async function expectAppShellNoHorizontalOverflow(page: Page): Promise<void> {
+  const metrics = await page.evaluate(() => {
+    const checkedElements = Array.from(document.querySelectorAll(
+      '.app-shell, .chat-panel, .inspector, .sidebar, .knowledge-map-summary, .local-io-log-controls, .local-io-log-panel, .add-runtime-body',
+    ))
+
+    return {
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      overflowingElements: checkedElements
+        .map((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: typeof element.className === 'string' ? element.className : '',
+            text: element.textContent?.trim().slice(0, 80) || element.tagName.toLowerCase(),
+            left: box.left,
+            right: box.right,
+          }
+        })
+        .filter((box) => box.left < -1 || box.right > document.documentElement.clientWidth + 1),
+    }
+  })
+
+  expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
+  expect(metrics.overflowingElements).toEqual([])
+}
+
+async function expectQuickstartStatusInsidePanel(page: Page): Promise<void> {
+  const outsideElements = await page.locator('.quickstart-panel').evaluate((panel) => {
+    const panelBox = panel.getBoundingClientRect()
+    return Array.from(panel.querySelectorAll('.quickstart-status dt, .quickstart-status dd, .quickstart-status dd > span'))
+      .map((element) => {
+        const box = element.getBoundingClientRect()
+        return {
+          text: element.textContent?.trim() || element.tagName.toLowerCase(),
+          left: box.left,
+          right: box.right,
+          panelLeft: panelBox.left,
+          panelRight: panelBox.right,
+        }
+      })
+      .filter((box) => box.left < panelBox.left - 1 || box.right > panelBox.right + 1)
+  })
+
+  expect(outsideElements).toEqual([])
 }
 
 async function expectDetailsInsideInspectorViewport(page: Page): Promise<void> {

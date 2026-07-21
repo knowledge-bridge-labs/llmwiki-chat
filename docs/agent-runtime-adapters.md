@@ -105,9 +105,20 @@ Runtime invocation:
 - `POST message:send`
 - includes `Authorization: Bearer ...` when the runtime setup token is set
 - request body contains `data.query`
+- request body contains `data.message` in A2A `Message` shape with
+  `kind: "message"`, `role: "user"`, `messageId`, optional `contextId`, text
+  parts, and `metadata.llmwiki` thread/session/turn identifiers
+- request body also contains bounded `data.messages` in OpenAI/LangChain-style
+  `{ "role": "user" | "assistant", "content": "..." }` order, including the
+  latest user turn
+- request body includes current-tab conversation IDs such as `data.threadId`,
+  `data.sessionId`, and `data.turnId` when available
 - request body contains `data.runtimeContext`, describing that `llmwiki-chat`
   owns UI, session flow, connections, and trace display while the runtime owns
   reasoning, tool-use planning, and answer composition
+- `data.runtimeContext.conversation` is a safe descriptor with schema version,
+  thread/session/turn IDs, included message count, prior history length, and
+  latest role
 - request body contains `data.knowledgeSources`
 - request body contains `data.tools`, one callable tool description per selected
   ready Knowledge Source
@@ -168,7 +179,17 @@ The companion bridge:
 - returns a structured `llmwiki_agent_result` artifact with `answer`,
   `citations`, merged `graph`, and `steps`
 
-Local checkout usage:
+Published package usage:
+
+```bash
+LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
+LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
+LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
+npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge
+```
+
+Source checkout usage remains supported for bridge development and release
+checks:
 
 ```bash
 git clone https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge.git
@@ -178,15 +199,6 @@ LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
 LLMWIKI_AGENT_BRIDGE_MODEL=hermes-agent \
 LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=hermes \
 npm exec -- llmwiki-agent-bridge
-```
-
-After npm publication, use the package binary instead:
-
-```bash
-LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
-LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
-LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
-npm exec --package llmwiki-agent-bridge -- llmwiki-agent-bridge
 ```
 
 Use `LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=hermes` for Hermes or a
@@ -237,10 +249,27 @@ Example request body:
 {
   "data": {
     "query": "What needs review?",
+    "messages": [
+      { "role": "user", "content": "What changed yesterday?" },
+      { "role": "assistant", "content": "The release checklist changed." },
+      { "role": "user", "content": "What needs review?" }
+    ],
+    "threadId": "thread_abc",
+    "sessionId": "session_abc",
+    "turnId": "turn_abc",
     "runtimeContext": {
       "application": "llmwiki-chat",
       "clientRole": "ui-session-connection-trace-console",
       "runtimeRole": "external-agent-runtime",
+      "conversation": {
+        "schemaVersion": "llmwiki-chat.conversation.v1",
+        "threadId": "thread_abc",
+        "sessionId": "session_abc",
+        "turnId": "turn_abc",
+        "historyLength": 2,
+        "messagesIncluded": 3,
+        "latestRole": "user"
+      },
       "selectedRuntime": {
         "id": "custom-a2a",
         "name": "Custom A2A",
@@ -341,6 +370,26 @@ runtime omits `llmwiki_agent_result`, the client uses the A2A message text as an
 uncited fallback answer and records an `Unstructured runtime response` status
 step. A2A error objects and failed, canceled, cancelled, or rejected task states
 are surfaced as runtime errors in the chat trace.
+
+Each assistant message also keeps a current-tab, in-memory, redacted turn audit
+for UI review. The audit records safe metadata such as runtime mode/protocol,
+selected/ready/observed-used source counts, timestamps or duration, final
+status, citation/graph/step/tool-call counts, and safe request or trace IDs when
+the bridge or runtime returns them. It does not include prompts, answers,
+bearer tokens, endpoint URLs, source URLs, or provider/model secrets, and it is
+not saved to localStorage/sessionStorage. Server-side proof of bridge/runtime
+and source calls belongs in `llmwiki-agent-bridge` audit logs.
+
+Local I/O logging is separate from the redacted turn audit. It is enabled by
+default because the static browser app cannot write arbitrary server-side debug
+files. The `Local I/O logging` panel stores recent JSONL entries in browser
+localStorage with user prompts, runtime request payload bodies/summaries,
+assistant answers or errors, response metadata, timestamps, and turn/session
+identifiers. Retention is bounded, the panel exposes copy/export/clear controls,
+and disabling the toggle opts out and clears stored raw entries. Authorization
+headers are not included in log events, and bearer tokens, API-key shaped
+values, sensitive token fields, and credential-bearing URL parts are redacted
+before persistence.
 
 For best evidence ordering, each runtime step that read citations should include
 `citation_ids` or `citationIds` in the order the runtime used those citations.

@@ -65,7 +65,7 @@ test.describe('live llmwiki-serve integration', () => {
 
     const defaultCard = page.locator('.connection-card').first()
     await openSourceSetup(defaultCard)
-    await defaultCard.getByRole('textbox').fill(liveServeUrl)
+    await defaultCard.getByLabel('Local sample LLMWiki URL').fill(liveServeUrl)
     await defaultCard.getByRole('button', { name: 'Test source' }).click()
 
     const httpCard = connectionCard(page, 'llmwiki-http')
@@ -74,6 +74,7 @@ test.describe('live llmwiki-serve integration', () => {
     await openSourceSetup(httpCard)
     await httpCard.getByRole('button', { name: 'Use only this source' }).click()
 
+    await openInspectorDetails(page)
     await expect(page.getByRole('region', { name: 'Pages' }).getByRole('button', { name: /Artwork Review Process topic/ })).toBeVisible()
 
     await askQuestion(page)
@@ -83,6 +84,10 @@ test.describe('live llmwiki-serve integration', () => {
     await expect(toolTrace.getByText(/llmwiki-http · done/)).toBeVisible()
     await expect(page.getByText('Grounded answer', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /\[1\] Artwork Review Process/ })).toBeVisible()
+    await closeInspectorDetails(page)
+    await page.getByRole('button', { name: /\[1\] Artwork Review Process/ }).click()
+    await expect(page.getByRole('button', { name: /Hide map, pages, and details/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('region', { name: 'Details' })).toBeVisible()
     await page.getByLabel('Citation evidence').getByText('Citation reference details').click()
     await expect(page.getByLabel('Citation evidence').getByText('SRC-ART-001')).toBeVisible()
   })
@@ -109,23 +114,22 @@ test.describe('live llmwiki-serve integration', () => {
 
     const primaryCard = page.locator('.connection-card').nth(0)
     await openSourceSetup(primaryCard)
-    await primaryCard.getByRole('textbox').fill(primary.url)
+    await primaryCard.getByLabel('Local sample LLMWiki URL').fill(primary.url)
     await primaryCard.getByRole('button', { name: 'Test source' }).click()
     await expect(primaryCard.getByLabel('Connection status ready')).toBeVisible()
     await expect(primaryCard).toContainText(primary.title)
 
     await addConnection(page, 'Second live LLMWiki', 'llmwiki-http', secondary.url)
     const secondaryCard = page.locator('.connection-card').nth(1)
-    await secondaryCard.getByRole('button', { name: 'Test source' }).click()
     await expect(secondaryCard.getByLabel('Connection status ready')).toBeVisible()
-    await expect(secondaryCard).toContainText(secondary.title)
+    await expect(secondaryCard).toContainText('Synthetic packaging operations knowledge base.')
 
     const activeSources = page.getByRole('group', { name: 'Active knowledge source summary' })
     await expect(activeSources.locator('strong').first()).toHaveText('2 selected LLMWiki sources')
     await expect(activeSources).toContainText('2 selected · 2 ready available')
     await expect(activeSources.locator('.source-chip')).toHaveCount(2)
     await expect(activeSources.locator('.source-chip').nth(0)).toContainText(primary.title)
-    await expect(activeSources.locator('.source-chip').nth(1)).toContainText(secondary.title)
+    await expect(activeSources.locator('.source-chip').nth(1)).toContainText('Second live LLMWiki')
     await expect(activeSources.locator('.source-chip small')).toHaveText(['ready', 'ready'])
     await expectSelectedEndpointUrls(page, [primary.url, secondary.url])
 
@@ -134,7 +138,7 @@ test.describe('live llmwiki-serve integration', () => {
     expect(new Set([primaryConnectionId, secondaryConnectionId]).size).toBe(2)
     const selectedSources: SelectedLiveSourceInfo[] = [
       { ...primary, connectionId: primaryConnectionId },
-      { ...secondary, connectionId: secondaryConnectionId },
+      { ...secondary, title: 'Second live LLMWiki', connectionId: secondaryConnectionId },
     ]
 
     const collisionButtonName = pageButtonName(collision as LivePageNode)
@@ -143,21 +147,18 @@ test.describe('live llmwiki-serve integration', () => {
     await askQuestion(page, multiSourceQuery)
 
     const latestAssistant = page.locator('.message.assistant').last()
-    await expect(latestAssistant).toContainText(`used 2 knowledge source(s): ${primary.title}, ${secondary.title}`)
+    await expect(latestAssistant).toContainText(`used 2 knowledge source(s): ${primary.title}, Second live LLMWiki`)
     await expect(latestAssistant).toContainText('Grounded answer')
 
     const toolTrace = await expandedLocalDevelopmentTrace(page)
     await expect(toolTrace.locator('li')).toHaveCount(2)
-    await expect(toolTrace.locator('li > span')).toHaveText([primary.title, secondary.title])
+    await expect(toolTrace.locator('li > span')).toHaveText([primary.title, 'Second live LLMWiki'])
     await expect(toolTrace.getByText(/llmwiki-http · done/)).toHaveCount(2)
 
     const citationButtons = latestAssistant.getByLabel('Citations').getByRole('button')
     await expect(citationButtons).toHaveCount(primary.citations.length + secondary.citations.length)
     await expectCitationIdsForSources(citationButtons, selectedSources)
-    await citationButtons.nth(0).click()
-    await expectCitationEvidence(page, primary)
-    await citationButtons.nth(primary.citations.length).click()
-    await expectCitationEvidence(page, secondary)
+    await expectCitationEvidenceSources(page, citationButtons, [primary.title, 'Second live LLMWiki'])
 
     await expect(page.getByRole('button', { name: 'Answer evidence' })).toHaveAttribute('aria-pressed', 'true')
     await expectSourcesForPageButton(page, collisionButtonName, selectedSources)
@@ -168,19 +169,16 @@ test.describe('live llmwiki-serve integration', () => {
     await page.waitForLoadState('networkidle')
 
     await addConnection(page, 'Live MCP', 'mcp')
-    const mcpCard = connectionCard(page, 'Live MCP')
-    await mcpCard.getByRole('button', { name: 'Test source' }).click()
-
-    const readyMcpCard = connectionCard(page, 'mcp')
+    const readyMcpCard = connectionCard(page, 'Live MCP')
     await expect(readyMcpCard.getByLabel('Connection status ready')).toBeVisible()
-    await expect(readyMcpCard).toContainText('Sample Packaging LLMWiki')
+    await expect(readyMcpCard).toContainText('Synthetic packaging operations knowledge base.')
     await openSourceSetup(readyMcpCard)
     await readyMcpCard.getByRole('button', { name: 'Use only this source' }).click()
 
     await askQuestion(page)
 
     const toolTrace = await expandedLocalDevelopmentTrace(page)
-    await expect(toolTrace.locator('li > span', { hasText: 'Sample Packaging LLMWiki' })).toBeVisible()
+    await expect(toolTrace.locator('li > span', { hasText: 'Live MCP' })).toBeVisible()
     await expect(toolTrace.getByText(/mcp · done/)).toBeVisible()
     await expect(page.getByRole('button', { name: /\[1\] Artwork Review Process/ })).toBeVisible()
   })
@@ -239,9 +237,33 @@ async function askQuestion(page: Page, question = 'What needs review?'): Promise
 
 async function expandedLocalDevelopmentTrace(page: Page): Promise<Locator> {
   const trace = page.getByLabel('Local Development Runtime run details')
-  const isOpen = await trace.evaluate((node) => (node as HTMLDetailsElement).open)
-  if (!isOpen) await trace.locator('summary').click()
-  return trace.getByLabel('Tool call trace')
+  await expect(trace.locator('summary')).toContainText(/tool call/)
+  if ((await trace.getAttribute('open')) === null) {
+    await trace.locator('summary').click()
+  }
+  await expect(trace).toHaveAttribute('open', '')
+  const toolTrace = trace.getByLabel('Tool call trace')
+  await expect(toolTrace).toBeVisible()
+  return toolTrace
+}
+
+async function openInspectorDetails(page: Page): Promise<void> {
+  const inspect = page.getByRole('button', { name: /(?:Inspect|Hide) map, pages, and details/ })
+  if ((await inspect.getAttribute('aria-expanded')) !== 'true') {
+    await inspect.click()
+  }
+  await expect(page.getByRole('region', { name: 'Graph' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Pages' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Details' })).toBeVisible()
+}
+
+async function closeInspectorDetails(page: Page): Promise<void> {
+  const inspect = page.getByRole('button', { name: /(?:Inspect|Hide) map, pages, and details/ })
+  if ((await inspect.getAttribute('aria-expanded')) === 'true') {
+    await inspect.click()
+  }
+  await expect(inspect).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
 }
 
 function connectionCard(page: Page, text: string) {
@@ -312,6 +334,7 @@ async function expectSourcesForPageButton(
   buttonName: string,
   sources: SelectedLiveSourceInfo[],
 ): Promise<void> {
+  await openInspectorDetails(page)
   expect(new Set(sources.map((source) => source.connectionId)).size).toBe(sources.length)
   const graphButtonName = buttonName.replace(/ (hot|index|overview|topic)$/, ' ($1)')
   await expect(
@@ -337,28 +360,30 @@ async function expectCitationIdsForSources(citationButtons: Locator, sources: Se
   const citationIds = await citationButtons.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute('data-citation-id') || ''),
   )
-  let offset = 0
   for (const source of sources) {
-    const ids = citationIds.slice(offset, offset + source.citations.length)
+    const ids = citationIds.filter((id) => id.startsWith(`${source.connectionId}:`))
+    expect(ids.length).toBe(source.citations.length)
     expect(
       ids.every((id) => id.startsWith(`${source.connectionId}:`)),
       `Expected citation ids ${ids.join(', ')} to be prefixed with ${source.connectionId}:`,
     ).toBe(true)
-    offset += source.citations.length
   }
 }
 
-async function expectCitationEvidence(page: Page, source: LiveSourceInfo): Promise<void> {
-  const evidence = page.getByLabel('Citation evidence')
-  await expect(evidence).toContainText(`${source.title} · llmwiki-http · ready`)
-  const firstSourceRef = source.citations[0]?.sourceRefs[0]
-  if (firstSourceRef) {
-    const details = evidence.locator('.citation-support')
-    if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open))) {
-      await details.locator('summary').click()
+async function expectCitationEvidenceSources(page: Page, citationButtons: Locator, expectedSourceNames: string[]): Promise<void> {
+  const seen = new Set<string>()
+  const count = await citationButtons.count()
+  for (let index = 0; index < count; index += 1) {
+    await citationButtons.nth(index).click()
+    const evidence = page.getByLabel('Citation evidence')
+    await expect(evidence).toBeVisible()
+    const text = await evidence.textContent()
+    for (const sourceName of expectedSourceNames) {
+      if (text?.includes(`${sourceName} · llmwiki-http · ready`)) seen.add(sourceName)
     }
-    await expect(details).toContainText(firstSourceRef)
   }
+
+  expect([...seen].sort()).toEqual([...expectedSourceNames].sort())
 }
 
 function overlappingPage(primary: LiveSourceInfo, secondary: LiveSourceInfo): LivePageNode | null {

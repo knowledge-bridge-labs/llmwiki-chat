@@ -527,6 +527,7 @@ export function diagnosticFromError(error: unknown): Diagnostic | undefined {
 
   return diagnosticFromParts({
     diagnostic: normalizeDiagnosticEnvelope(record.diagnostic),
+    requestId: readRequestId(record),
     traceId: readTraceId(record),
     steps: normalizeDiagnosticSteps(record.steps),
     partial: Object.hasOwn(record, 'partial') ? record.partial : undefined,
@@ -555,6 +556,7 @@ export function normalizeDiagnosticEnvelope(value: unknown): Diagnostic | undefi
     detail: readString(record, 'detail') || readString(record, 'description'),
     observations: observations.length ? observations : undefined,
     remediation: remediation.length ? remediation : undefined,
+    requestId: readRequestId(record),
     traceId: readTraceId(record),
     type: readString(record, 'type'),
     instance: readString(record, 'instance'),
@@ -569,6 +571,7 @@ export function normalizeDiagnosticEnvelope(value: unknown): Diagnostic | undefi
 export function errorWithDiagnostic(message: string, envelope?: unknown): Error {
   const error = new Error(message) as Error & {
     diagnostic?: Diagnostic
+    requestId?: string
     traceId?: string
     steps?: DiagnosticStep[]
     partial?: unknown
@@ -577,6 +580,7 @@ export function errorWithDiagnostic(message: string, envelope?: unknown): Error 
   if (!diagnostic) return error
 
   error.diagnostic = diagnostic
+  if (diagnostic.requestId) error.requestId = diagnostic.requestId
   if (diagnostic.traceId) error.traceId = diagnostic.traceId
   if (diagnostic.steps?.length) error.steps = diagnostic.steps
   if (Object.hasOwn(diagnostic, 'partial')) error.partial = diagnostic.partial
@@ -619,6 +623,7 @@ function diagnosticFromEnvelope(value: unknown): Diagnostic | undefined {
     .filter(hasProblemDetailsSignal)
     .map(normalizeDiagnosticEnvelope)
     .find(Boolean)
+  const requestId = candidates.map(readRequestId).find(Boolean) || ''
   const traceId = candidates.map(readTraceId).find(Boolean) || ''
   const steps = candidates
     .map((item) => normalizeDiagnosticSteps(item.steps))
@@ -628,6 +633,7 @@ function diagnosticFromEnvelope(value: unknown): Diagnostic | undefined {
 
   return diagnosticFromParts({
     diagnostic: mergeDiagnosticList([problemDetails, explicitDiagnostic, ...collectedDiagnostics]),
+    requestId,
     traceId,
     steps,
     partial,
@@ -646,6 +652,7 @@ function mergeDiagnostics(base?: Diagnostic, overlay?: Diagnostic): Diagnostic |
     ...overlay,
     title: base.title || overlay.title,
     detail: base.detail || overlay.detail,
+    requestId: overlay.requestId || base.requestId,
     traceId: overlay.traceId || base.traceId,
     type: overlay.type || base.type,
     instance: overlay.instance || base.instance,
@@ -669,16 +676,19 @@ function mergeStringLists(left?: string[], right?: string[]): string[] | undefin
 
 function diagnosticFromParts({
   diagnostic,
+  requestId,
   traceId,
   steps,
   partial,
 }: {
   diagnostic?: Diagnostic
+  requestId?: string
   traceId?: string
   steps?: DiagnosticStep[]
   partial?: unknown
 }): Diagnostic | undefined {
   const next: Diagnostic = { ...(diagnostic || {}) }
+  if (requestId && !next.requestId) next.requestId = requestId
   if (traceId && !next.traceId) next.traceId = traceId
   if (steps?.length && !next.steps?.length) next.steps = steps
   if (partial !== undefined && !Object.hasOwn(next, 'partial')) next.partial = partial
@@ -711,6 +721,7 @@ function hasDiagnosticContent(diagnostic: Diagnostic): boolean {
     || diagnostic.redacted !== undefined
     || diagnostic.observations?.length
     || diagnostic.remediation?.length
+    || diagnostic.requestId
     || diagnostic.traceId
     || diagnostic.type
     || diagnostic.instance
@@ -754,6 +765,16 @@ function readTraceId(record: Record<string, unknown>): string {
     || readString(record, 'trace_id')
     || readString(record, 'traceID')
     || readString(record, 'trace-id')
+}
+
+function readRequestId(record: Record<string, unknown>): string {
+  return readString(record, 'requestId')
+    || readString(record, 'request_id')
+    || readString(record, 'requestID')
+    || readString(record, 'request-id')
+    || readString(record, 'xRequestId')
+    || readString(record, 'x_request_id')
+    || readString(record, 'x-request-id')
 }
 
 function readDiagnosticFactList(value: unknown): string[] {

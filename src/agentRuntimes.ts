@@ -9,6 +9,8 @@ import {
 import type {
   AgentConnection,
   AgentProtocol,
+  AgentRuntimeA2aTextMessage,
+  AgentRuntimeMessage,
   AgentStep,
   Citation,
   Connection,
@@ -25,11 +27,18 @@ const EXTERNAL_A2A_RUNTIME_MESSAGE_TIMEOUT_MS = 120_000
 const BRIDGE_MCP_DISCOVERY_TIMEOUT_MS = 10_000
 const BRIDGE_MCP_RUNTIME_TOOL_TIMEOUT_MS = 120_000
 const LOCAL_AGENT_BRIDGE_URL = 'http://127.0.0.1:8788'
+const AGENT_RUNTIME_MESSAGE_LIMIT = 16
+const CONVERSATION_SCHEMA_VERSION = 'llmwiki-chat.conversation.v1'
 
 export interface AgentRunRequest {
   agent: AgentConnection
   knowledgeSources: Connection[]
   query: string
+  messages?: AgentRuntimeMessage[]
+  messageId?: string
+  threadId?: string
+  sessionId?: string
+  turnId?: string
   signal?: AbortSignal
 }
 
@@ -40,9 +49,23 @@ export interface AgentRunResult {
   steps: AgentStep[]
 }
 
+export interface AgentRuntimeRequestLog {
+  transport: 'a2a-message:send' | 'mcp-tools/call'
+  summary: {
+    runtimeId: string
+    runtimeName: string
+    runtimeProtocol: AgentProtocol
+    selectedKnowledgeSourceCount: number
+    messagesIncluded: number
+    hasA2aMessage: boolean
+  }
+  body: Record<string, unknown>
+}
+
 export type AgentRunEvent =
   | { type: 'run_started'; step: AgentStep }
   | { type: 'status'; step: AgentStep }
+  | { type: 'runtime_request'; request: AgentRuntimeRequestLog }
   | { type: 'tool_call_started'; step: AgentStep; connectionId: string; toolName: string }
   | {
       type: 'tool_call_result'
@@ -101,9 +124,8 @@ export const agentRuntimeRegistry: AgentRuntimeDefinition[] = [
     protocol: 'bridge-a2a',
     status: 'unknown',
     url: LOCAL_AGENT_BRIDGE_URL,
-    selected: true,
     bridge: { mode: 'a2a', local: true },
-    description: 'Default Agent Bridge connection using the A2A agent-card and message endpoint.',
+    description: 'Local Agent Bridge connection using the A2A agent-card and message endpoint.',
     createClient: (agent) => new ExternalA2aAgentRuntimeClient(agent),
   },
   {
@@ -139,6 +161,7 @@ export const agentRuntimeRegistry: AgentRuntimeDefinition[] = [
     name: 'Local Development Runtime',
     protocol: 'mock-agent',
     status: 'ready',
+    selected: true,
     description: 'Local development runtime for exercising the UI with deterministic fallback answers while still calling selected LLMWiki sources as real tools.',
     createClient: () => new DevelopmentMockAgentRuntimeClient(),
   },
@@ -444,7 +467,14 @@ export class ExternalA2aAgentRuntimeClient implements AgentRuntimeClient {
       steps.push(callStep)
       yield { type: 'status', step: callStep }
 
-      const response = await postExternalA2aRuntimeMessage(endpoint.messageUrl, request, request.signal)
+      const usableSources = selectedKnowledgeSources(request)
+      const requestBody = { data: agentRunArguments(request, usableSources) }
+      yield {
+        type: 'runtime_request',
+        request: agentRuntimeRequestLog('a2a-message:send', request, usableSources, requestBody),
+      }
+
+      const response = await postExternalA2aRuntimeMessage(endpoint.messageUrl, request, requestBody, request.signal)
       const parsed = parseA2aAgentRunResult(request, response)
       const doneCallStep = {
         ...callStep,
@@ -540,13 +570,24 @@ export class BridgeMcpAgentRuntimeClient implements AgentRuntimeClient {
       steps.push(callStep)
       yield { type: 'status', step: callStep }
 
+      const params = {
+        name: 'llmwiki_agent_run',
+        arguments: agentRunArguments(request, usableSources),
+      }
+      const requestBody = {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params,
+      }
+      yield {
+        type: 'runtime_request',
+        request: agentRuntimeRequestLog('mcp-tools/call', request, usableSources, requestBody),
+      }
+
       const response = await callBridgeMcpMethod(
         request.agent,
         'tools/call',
-        {
-          name: 'llmwiki_agent_run',
-          arguments: agentRunArguments(request, usableSources),
-        },
+        params,
         request.signal,
         `${request.agent.name} llmwiki_agent_run`,
         BRIDGE_MCP_RUNTIME_TOOL_TIMEOUT_MS,
@@ -938,18 +979,16 @@ async function loadExternalA2aRuntimeEndpoint(
 async function postExternalA2aRuntimeMessage(
   messageUrl: string,
   request: AgentRunRequest,
+  body: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const usableSources = selectedKnowledgeSources(request)
   const payload = await fetchJson<Record<string, unknown>>(messageUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...agentRuntimeAuthHeaders(request.agent),
     },
-    body: JSON.stringify({
-      data: agentRunArguments(request, usableSources),
-    }),
+    body: JSON.stringify(body),
     signal,
   }, `${request.agent.name} message:send`, EXTERNAL_A2A_RUNTIME_MESSAGE_TIMEOUT_MS)
   assertNoA2aRuntimeError(payload)
@@ -957,12 +996,111 @@ async function postExternalA2aRuntimeMessage(
 }
 
 function agentRunArguments(request: AgentRunRequest, usableSources: Connection[]): Record<string, unknown> {
+  const messages = agentRuntimeMessages(request)
+  const conversation = runtimeConversationDescriptor(request, messages)
+  const message = agentRuntimeA2aMessage(request)
   return {
     query: request.query,
-    runtimeContext: runtimeContextDescriptor(request, usableSources),
+    ...(message ? { message } : {}),
+    messages,
+    ...(request.threadId ? { threadId: request.threadId } : {}),
+    ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+    ...(request.turnId ? { turnId: request.turnId } : {}),
+    runtimeContext: runtimeContextDescriptor(request, usableSources, conversation),
     knowledgeSources: usableSources.map(knowledgeSourceDescriptor),
     tools: usableSources.map(runtimeToolDescriptor),
   }
+}
+
+function agentRuntimeRequestLog(
+  transport: AgentRuntimeRequestLog['transport'],
+  request: AgentRunRequest,
+  usableSources: Connection[],
+  body: Record<string, unknown>,
+): AgentRuntimeRequestLog {
+  const data = asRecord(body.data)
+    || asRecord(asRecord(body.params)?.arguments)
+    || {}
+  const messages = Array.isArray(data.messages) ? data.messages : []
+  return {
+    transport,
+    summary: {
+      runtimeId: request.agent.id,
+      runtimeName: request.agent.name,
+      runtimeProtocol: request.agent.protocol,
+      selectedKnowledgeSourceCount: usableSources.length,
+      messagesIncluded: messages.length,
+      hasA2aMessage: Boolean(asRecord(data.message)),
+    },
+    body,
+  }
+}
+
+function agentRuntimeA2aMessage(request: AgentRunRequest): AgentRuntimeA2aTextMessage | null {
+  const text = request.query.trim()
+  const messageId = safeRuntimeIdentifier(request.messageId || request.turnId || '')
+  if (!text || !messageId) return null
+  const threadId = safeRuntimeIdentifier(request.threadId || '')
+  const sessionId = safeRuntimeIdentifier(request.sessionId || '')
+  const turnId = safeRuntimeIdentifier(request.turnId || '')
+  const llmwiki = compactRuntimeRecord({
+    schemaVersion: CONVERSATION_SCHEMA_VERSION,
+    ...(threadId ? { threadId } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(turnId ? { turnId } : {}),
+  })
+  return compactRuntimeRecord({
+    kind: 'message',
+    messageId,
+    ...(threadId ? { contextId: threadId } : {}),
+    role: 'user',
+    parts: [{ kind: 'text', text }],
+    metadata: { llmwiki },
+  }) as unknown as AgentRuntimeA2aTextMessage
+}
+
+function agentRuntimeMessages(request: AgentRunRequest): AgentRuntimeMessage[] {
+  const messages = (request.messages || [])
+    .map(normalizeAgentRuntimeMessage)
+    .filter((message): message is AgentRuntimeMessage => Boolean(message))
+  const query = request.query.trim()
+  const latest = messages[messages.length - 1]
+  if (query && (!latest || latest.role !== 'user' || latest.content !== query)) {
+    messages.push({ role: 'user', content: query })
+  }
+  return messages.slice(-AGENT_RUNTIME_MESSAGE_LIMIT)
+}
+
+function normalizeAgentRuntimeMessage(message: AgentRuntimeMessage): AgentRuntimeMessage | null {
+  if (message.role !== 'user' && message.role !== 'assistant') return null
+  const content = message.content.trim()
+  return content ? { role: message.role, content } : null
+}
+
+function runtimeConversationDescriptor(
+  request: AgentRunRequest,
+  messages: AgentRuntimeMessage[],
+): Record<string, unknown> {
+  const latestRole = messages[messages.length - 1]?.role
+  return {
+    schemaVersion: CONVERSATION_SCHEMA_VERSION,
+    ...(request.threadId ? { threadId: request.threadId } : {}),
+    ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+    ...(request.turnId ? { turnId: request.turnId } : {}),
+    historyLength: Math.max(0, messages.length - (latestRole ? 1 : 0)),
+    messagesIncluded: messages.length,
+    ...(latestRole ? { latestRole } : {}),
+  }
+}
+
+function safeRuntimeIdentifier(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128)
+}
+
+function compactRuntimeRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined && value !== ''),
+  )
 }
 
 function agentRuntimeAuthHeaders(agent: AgentConnection): Record<string, string> {
@@ -1226,11 +1364,16 @@ function knowledgeSourceDescriptor(source: Connection): Record<string, unknown> 
   }
 }
 
-function runtimeContextDescriptor(request: AgentRunRequest, sources: Connection[]): Record<string, unknown> {
+function runtimeContextDescriptor(
+  request: AgentRunRequest,
+  sources: Connection[],
+  conversation: Record<string, unknown>,
+): Record<string, unknown> {
   return {
     application: 'llmwiki-chat',
     clientRole: 'ui-session-connection-trace-console',
     runtimeRole: 'external-agent-runtime',
+    conversation,
     selectedRuntime: {
       id: request.agent.id,
       name: request.agent.name,
@@ -1386,6 +1529,8 @@ function normalizeRuntimeSteps(value: unknown, runtimeId: string): AgentStep[] {
       connectionId: readString(item, 'connectionId') || readString(item, 'connection_id'),
       citationIds: readStringArray(item.citationIds ?? item.citation_ids),
       latencyMs: readNumber(item, 'latencyMs') ?? readNumber(item, 'latency_ms'),
+      requestId: readString(item, 'requestId') || readString(item, 'request_id'),
+      traceId: readString(item, 'traceId') || readString(item, 'trace_id'),
       error,
       diagnostic: runtimeStepDiagnostic(item),
       parentId: readString(item, 'parentId') || readString(item, 'parent_id'),
@@ -1425,6 +1570,7 @@ function runtimeStepDiagnostic(item: Record<string, unknown>): Diagnostic | unde
     || normalizeDiagnosticEnvelope({
       observations: item.observations ?? item.observation,
       remediation: item.remediation ?? item.remediations,
+      requestId: item.requestId ?? item.request_id,
       traceId: item.traceId ?? item.trace_id,
       partial: item.partial,
     })
@@ -1436,6 +1582,7 @@ function runtimePayloadDiagnostic(payload: Record<string, unknown>): Diagnostic 
     || normalizeDiagnosticEnvelope({
       observations: payload.observations ?? payload.observation,
       remediation: payload.remediation ?? payload.remediations,
+      requestId: payload.requestId ?? payload.request_id,
       traceId: payload.traceId ?? payload.trace_id,
       partial: payload.partial,
     })

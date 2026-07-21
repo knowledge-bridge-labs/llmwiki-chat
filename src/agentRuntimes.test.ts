@@ -70,13 +70,13 @@ function requestHeader(init: RequestInit | undefined, name: string): string | nu
 }
 
 describe('starterAgentConnections', () => {
-  it('selects Local Agent Bridge A2A by default and demotes the local development runtime', () => {
+  it('selects Local Development Runtime by default and keeps local bridge available', () => {
     expect(starterAgentConnections[0]).toMatchObject({
       id: 'bridge-a2a',
       name: 'Local Agent Bridge (A2A)',
       protocol: 'bridge-a2a',
       url: 'http://127.0.0.1:8788',
-      selected: true,
+      selected: false,
       status: 'unknown',
     })
     expect(starterAgentConnections.find((agent) => agent.id === 'bridge-mcp')).toMatchObject({
@@ -88,7 +88,7 @@ describe('starterAgentConnections', () => {
     expect(starterAgentConnections.find((agent) => agent.id === 'mock-agent')).toMatchObject({
       name: 'Local Development Runtime',
       protocol: 'mock-agent',
-      selected: false,
+      selected: true,
       status: 'ready',
     })
   })
@@ -192,6 +192,11 @@ describe('BridgeMcpAgentRuntimeClient', () => {
 
   it('runs llmwiki_agent_run through MCP tools/call with selected ready sources', async () => {
     const requestBodies: Array<Record<string, unknown>> = []
+    const messages = [
+      { role: 'user' as const, content: 'Earlier question?' },
+      { role: 'assistant' as const, content: 'Earlier answer.' },
+      { role: 'user' as const, content: 'What is ready?' },
+    ]
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe('http://127.0.0.1:8788/mcp')
       const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
@@ -246,12 +251,22 @@ describe('BridgeMcpAgentRuntimeClient', () => {
       agent: bridgeMcpRuntime,
       knowledgeSources: [knowledgeSource, unreadyKnowledgeSource],
       query: 'What is ready?',
+      messages,
+      messageId: 'message-mcp-test',
+      threadId: 'thread-mcp-test',
+      sessionId: 'session-mcp-test',
+      turnId: 'turn-mcp-test',
     })
     const toolCall = requestBodies.find((body) => body.method === 'tools/call')
     const params = toolCall?.params as {
       name: string
       arguments: {
         query: string
+        message: Record<string, unknown>
+        messages: typeof messages
+        threadId: string
+        sessionId: string
+        turnId: string
         runtimeContext: Record<string, unknown>
         knowledgeSources: Array<Record<string, unknown>>
         tools: Array<Record<string, unknown>>
@@ -262,7 +277,35 @@ describe('BridgeMcpAgentRuntimeClient', () => {
     expect(params.name).toBe('llmwiki_agent_run')
     expect(params.arguments).toMatchObject({
       query: 'What is ready?',
+      message: {
+        kind: 'message',
+        messageId: 'message-mcp-test',
+        contextId: 'thread-mcp-test',
+        role: 'user',
+        parts: [{ kind: 'text', text: 'What is ready?' }],
+        metadata: {
+          llmwiki: {
+            schemaVersion: 'llmwiki-chat.conversation.v1',
+            threadId: 'thread-mcp-test',
+            sessionId: 'session-mcp-test',
+            turnId: 'turn-mcp-test',
+          },
+        },
+      },
+      messages,
+      threadId: 'thread-mcp-test',
+      sessionId: 'session-mcp-test',
+      turnId: 'turn-mcp-test',
       runtimeContext: {
+        conversation: {
+          schemaVersion: 'llmwiki-chat.conversation.v1',
+          threadId: 'thread-mcp-test',
+          sessionId: 'session-mcp-test',
+          turnId: 'turn-mcp-test',
+          historyLength: 2,
+          messagesIncluded: 3,
+          latestRole: 'user',
+        },
         selectedRuntime: {
           id: 'bridge-mcp',
           name: 'Local Agent Bridge (MCP)',
@@ -441,6 +484,11 @@ describe('ExternalA2aAgentRuntimeClient', () => {
 
   it('streams a structured llmwiki_agent_result artifact from message:send', async () => {
     let requestBody: Record<string, unknown> | undefined
+    const messages = [
+      { role: 'user' as const, content: 'Earlier A2A question?' },
+      { role: 'assistant' as const, content: 'Earlier A2A answer.' },
+      { role: 'user' as const, content: 'What is ready?' },
+    ]
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/.well-known/agent-card.json')) {
@@ -482,13 +530,18 @@ describe('ExternalA2aAgentRuntimeClient', () => {
                       citation_ids: ['wiki:cite-1'],
                       detail: 'Read selected source.',
                       latency_ms: 12,
+                      request_id: 'req-runtime-step',
+                      trace_id: 'trace-runtime-step-direct',
                       diagnostic: {
                         observations: ['The runtime used one selected source.'],
                         remediation: ['Keep the source selected for follow-up questions.'],
+                        requestId: 'req-runtime-diagnostic',
                         traceId: 'trace-runtime-step',
                       },
                     },
                   ],
+                  requestId: 'req-runtime-payload',
+                  traceId: 'trace-runtime-payload',
                 },
               },
             ],
@@ -502,6 +555,11 @@ describe('ExternalA2aAgentRuntimeClient', () => {
       agent: runtime,
       knowledgeSources: [knowledgeSource, unreadyKnowledgeSource],
       query: 'What is ready?',
+      messages,
+      messageId: 'message-a2a-test',
+      threadId: 'thread-a2a-test',
+      sessionId: 'session-a2a-test',
+      turnId: 'turn-a2a-test',
     })) {
       events.push(event)
     }
@@ -515,10 +573,38 @@ describe('ExternalA2aAgentRuntimeClient', () => {
     expect(requestBody).toMatchObject({
       data: {
         query: 'What is ready?',
+        message: {
+          kind: 'message',
+          messageId: 'message-a2a-test',
+          contextId: 'thread-a2a-test',
+          role: 'user',
+          parts: [{ kind: 'text', text: 'What is ready?' }],
+          metadata: {
+            llmwiki: {
+              schemaVersion: 'llmwiki-chat.conversation.v1',
+              threadId: 'thread-a2a-test',
+              sessionId: 'session-a2a-test',
+              turnId: 'turn-a2a-test',
+            },
+          },
+        },
+        messages,
+        threadId: 'thread-a2a-test',
+        sessionId: 'session-a2a-test',
+        turnId: 'turn-a2a-test',
         runtimeContext: {
           application: 'llmwiki-chat',
           clientRole: 'ui-session-connection-trace-console',
           runtimeRole: 'external-agent-runtime',
+          conversation: {
+            schemaVersion: 'llmwiki-chat.conversation.v1',
+            threadId: 'thread-a2a-test',
+            sessionId: 'session-a2a-test',
+            turnId: 'turn-a2a-test',
+            historyLength: 2,
+            messagesIncluded: 3,
+            latestRole: 'user',
+          },
           selectedRuntime: {
             id: 'custom-a2a',
             name: 'Custom A2A',
@@ -589,11 +675,21 @@ describe('ExternalA2aAgentRuntimeClient', () => {
     expect(completed?.result.steps).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'runtime-tool-wiki',
+        requestId: 'req-runtime-step',
+        traceId: 'trace-runtime-step-direct',
         citationIds: ['wiki:cite-1'],
         diagnostic: expect.objectContaining({
+          requestId: 'req-runtime-diagnostic',
           traceId: 'trace-runtime-step',
           observations: ['The runtime used one selected source.'],
           remediation: ['Keep the source selected for follow-up questions.'],
+        }),
+      }),
+      expect.objectContaining({
+        id: 'runtime-diagnostic',
+        diagnostic: expect.objectContaining({
+          requestId: 'req-runtime-payload',
+          traceId: 'trace-runtime-payload',
         }),
       }),
     ]))

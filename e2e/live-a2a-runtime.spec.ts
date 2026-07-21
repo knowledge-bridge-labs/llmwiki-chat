@@ -34,7 +34,7 @@ test('uses Custom A2A against a live local runtime process', async ({ page }) =>
     await selectRuntimeCard(runtimeCard)
 
     await page.getByLabel('Question').fill('Use the live external runtime')
-    await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+    await page.getByRole('button', { name: 'Ask selected source' }).click()
 
     const assistantMessage = page.locator('.message.assistant').last()
     await expect(assistantMessage).toContainText('Live A2A runtime used 1 selected LLMWiki source descriptor')
@@ -130,7 +130,7 @@ async function selectRuntimeCard(runtimeCard: Locator): Promise<void> {
 }
 
 async function openAgentBridgeSection(page: Page): Promise<void> {
-  await openSidebarSection(page.getByRole('region', { name: 'Agent bridge' }))
+  await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
 }
 
 async function openSidebarSection(section: Locator): Promise<void> {

@@ -23,8 +23,9 @@ provides the browser inspection and review surface.
 
 [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Runtime adapters](docs/agent-runtime-adapters.md) | [Release checklist](docs/release.md) | [Docs portal](https://knowledge-bridge-labs.github.io/llmwiki-docs/) | [Quickstart docs](https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart) | [Release status](https://knowledge-bridge-labs.github.io/llmwiki-docs/status) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Support](SUPPORT.md) | [Changelog](CHANGELOG.md)
 
-> Public-preview note: source-checkout usage is the supported first-run path.
-> Package-install commands apply after the first npm release is published.
+> Public-preview note: npm install is available for the published `llmwiki-chat`
+> package.
+> Source checkout remains supported for local development and release checks.
 
 It is not a model server, hosted RAG app, wiki compiler, ingestion pipeline,
 vector database, crawler, credential store, or production runtime host.
@@ -78,25 +79,34 @@ npm run dev
 
 Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 
-1. Use the prefilled `Local sample LLMWiki` source first. Confirm its URL is
-   `http://127.0.0.1:8765`, then click `Test source`.
-2. A ready source loads page, graph, and citation context into the Knowledge
-   map, Pages, and Details panels.
-3. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
+1. The empty chat state stays focused on the selected source and suggested
+   prompts. Open `Show Quickstart` only if you want guided setup help.
+2. Quickstart Step 1 starts with `llmwiki-serve` only. Use the prefilled
+   `Local sample LLMWiki` source first. Confirm its URL is
+   `http://127.0.0.1:8765`, then click `Test sample source`.
+3. If the source check fails, open `Show llmwiki-serve commands`, start the
+   source in a trusted shell, and test again. You can close Quickstart any time
+   and configure Knowledge Sources manually.
+4. A ready source prepares page, graph, and citation context. Open
+   `Inspect map, pages, and details` when you want to review the Graph, Pages,
+   and Details panels.
+5. With only `llmwiki-serve`, choose `Continue serve-only`. The default Local
+   Development Runtime needs no external LLM endpoint, Hermes Agent,
+   DeepAgents install, or bridge. It is for deterministic UI, trace, citation,
+   and graph rendering checks, not answer-quality validation.
+6. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
    `MCP`, enter the endpoint URL, and click `Add`.
-4. Prefer the default Local Agent Bridge A2A or MCP path when
-   `llmwiki-agent-bridge` is running at `http://127.0.0.1:8788`; confirm the
-   bridge URL and click `Test bridge`.
-5. When the bridge is ready, chat discovers the bridge's registered Knowledge
+7. Expand `Show optional bridge/runtime steps` only when you want
+   `llmwiki-agent-bridge`, Hermes, DeepAgents, or an OpenAI-compatible runtime.
+   If no bridge or LLM endpoint is available, skip this section and continue
+   serve-only.
+8. When the bridge is ready, chat discovers the bridge's registered Knowledge
    Sources and shows them as bridge-managed, read-only source cards. Edit those
    sources in the bridge settings page. Keep direct source cards in chat for
    standalone `llmwiki-serve` testing and debugging.
-6. If no bridge is running, switch to `Local Development Runtime` under
-   testing/developer runtime options for deterministic UI, trace, citation, and
-   graph rendering checks. It is not an answer-quality runtime.
-7. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
+9. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
-8. Review the answer, citations, artifacts, and trace before treating the result
+10. Review the answer, citations, artifacts, and trace before treating the result
    as useful.
 
 The Vite command starts only the browser client. It does not start
@@ -132,22 +142,24 @@ the surrounding network is protected.
 | Knowledge Source URLs | Public HTTPS is the best default for shared deployments. HTTP, private, tailnet, local, single-label, `.local`, `.internal`, and other non-public source URLs are allowed for OSS, local, and private use; the UI warns when selected sources may be unreachable or unsafe for external runtimes. |
 | Bearer tokens | Runtime bearer tokens stay in current-tab browser state, are sent only as `Authorization: Bearer ...` for agent-card discovery and `message:send`, and are not saved to localStorage, Knowledge Source descriptors, runtime request bodies, or package artifacts. |
 | Provider secrets | Keep model-provider keys in the external runtime or `llmwiki-agent-bridge` process environment. Do not paste provider keys into the browser. |
+| Local I/O logging | The browser workbench keeps a bounded, default-on local JSONL log in localStorage for debugging prompts, runtime request payloads, answers/errors, and response metadata. Use the `Local I/O logging` toggle to opt out and clear raw entries; Authorization headers, bearer tokens, API-key shaped values, and credential-bearing URL parts are redacted before storage. |
 
 ## Release Status
 
-`llmwiki-chat` is in public source-checkout preview. Source-checkout usage is
-the supported path today. Package metadata and repository links target the
-Knowledge Bridge Labs organization; package-install links become active after
-package publication. See the [release checklist](docs/release.md) for the
+`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.3`.
+Source checkout remains supported for local development and release checks.
+See the [release checklist](docs/release.md) and hosted release status for the
 current posture.
 
 ## Demo
 
-![LLMWiki Chat workbench connected to the sample wiki](docs/assets/llmwiki-chat-workbench.png)
+![LLMWiki Chat source-first default workbench](docs/assets/llmwiki-chat-workbench.png)
 
-The screenshot shows the workbench connected to the bundled sample wiki through
-`llmwiki-serve`, with the local development runtime selected and graph context
-loaded for inspection before asking.
+The screenshot shows the default source-first workbench before the opt-in
+Quickstart is opened. The inspector remains collapsed behind `Inspect map,
+pages, and details`. It uses sanitized loopback sample values and does not show
+a connected production runtime, private Knowledge Source, raw logs, or managed
+backend automation.
 
 ## Workbench Modes
 
@@ -174,15 +186,23 @@ targets.
 | `llmwiki-docs` | Cross-repo documentation portal. | You need the quickstart, protocol map, deployment posture, and release checklist in one place. | `npm run check` |
 
 Use `llmwiki-agent-bridge` when an OpenAI-compatible local runtime should sit
-behind an A2A-style endpoint for `llmwiki-chat`. From a sibling checkout, or
-after npm publication with `npm exec --package llmwiki-agent-bridge --`, set
-`LLMWIKI_AGENT_BRIDGE_BASE_URL`, `LLMWIKI_AGENT_BRIDGE_MODEL`, and
-`LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE` (`hermes`, `deepagents`, or `generic`).
-Use `LLMWIKI_AGENT_BRIDGE_SOURCE_POLICY` and
-`LLMWIKI_AGENT_BRIDGE_ALLOWED_SOURCE_ORIGINS` to control which Knowledge Source
-origins the bridge may fetch. If the bridge requires callers to authenticate,
-set `LLMWIKI_AGENT_BRIDGE_BEARER_TOKEN` in the bridge process and enter that
-runtime bearer token in the `llmwiki-chat` runtime setup panel.
+behind an A2A-style endpoint for `llmwiki-chat`. The public-preview bridge
+package is `llmwiki-agent-bridge@0.1.0`:
+
+```bash
+LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
+LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
+LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
+npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge
+```
+
+For bridge development or release checks, a sibling source checkout remains
+supported; from that checkout, run `npm ci` and `npm exec -- llmwiki-agent-bridge`
+with the same environment variables. Use `LLMWIKI_AGENT_BRIDGE_SOURCE_POLICY`
+and `LLMWIKI_AGENT_BRIDGE_ALLOWED_SOURCE_ORIGINS` to control which Knowledge
+Source origins the bridge may fetch. If the bridge requires callers to
+authenticate, set `LLMWIKI_AGENT_BRIDGE_BEARER_TOKEN` in the bridge process and
+enter that runtime bearer token in the `llmwiki-chat` runtime setup panel.
 
 ## What It Does
 
@@ -226,16 +246,19 @@ display.
 
 ## Package Artifact
 
-Source checkout usage is the supported path until the first npm publication.
-When published, the npm package is intended as a release artifact for downstream
-static hosting and documentation review. It contains the built browser app under
-`dist/`, public docs, package metadata, retained third-party license texts, and
-community governance files. It does not include a bridge binary, embedded bridge
-implementation, hosted service, model runtime, or production web server.
+`llmwiki-chat` is published on npm. The npm package is a static distribution
+artifact for downstream static hosting and documentation review.
+It contains the built browser app under `dist/`, public docs, package metadata,
+retained third-party license texts, and community governance files. It does not
+include a bridge binary, embedded bridge implementation, hosted service, model
+runtime, or production web server.
 
-After npm publication, consumers can unpack the package and host the static
-`dist/` directory with their preferred web server. Runtime bridge workflows use
-the separate `llmwiki-agent-bridge` checkout or npm package.
+Source checkout usage remains supported for local development and release
+checks. Consumers can unpack the package and host the static `dist/` directory
+with their preferred web server. Runtime bridge workflows use the separate
+`llmwiki-agent-bridge@0.1.0` package with
+`npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge`, or a
+bridge source checkout for bridge development and release checks.
 
 ## Supported Usage Modes
 
@@ -301,6 +324,11 @@ identity checks, validation guidance, and companion bridge setup, see
   Knowledge Source URL they receive.
 - Keep runtime provider keys in the external runtime or `llmwiki-agent-bridge`
   process environment. Do not paste model-provider keys into the browser.
+- Local I/O logging is enabled by default to make static-app debugging
+  accessible without server file writes. It stores recent sanitized JSONL
+  entries in this browser's localStorage only; opt out with the
+  `Local I/O logging` toggle or use the panel's clear control before demos,
+  screenshots, or shared-device use.
 - Do not add real credentials, bearer tokens, private endpoint URLs, private
   exports, raw sensitive request logs, or screenshots with private
   infrastructure to examples, issues, docs, tests, or release artifacts.

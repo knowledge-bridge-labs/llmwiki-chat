@@ -7,6 +7,43 @@ begin. Dates use `YYYY-MM-DD`.
 
 ## Unreleased
 
+- _No changes yet._
+
+## 0.1.3 - 2026-07-22
+
+- Removed stale fixed-version README references from the npm package page so
+  the public-preview and package-artifact sections do not drift after future
+  patch releases.
+- Updated package metadata and generated license artifact headers for the
+  `0.1.3` npm patch release.
+
+## 0.1.2 - 2026-07-22
+
+- Refreshed the README demo image so the main package page shows the default
+  source-first workbench before Quickstart is opened.
+- Preserved the post-click Quickstart-open screenshot as a separate docs asset
+  for future Quickstart-specific documentation.
+- Updated Quickstart spec/rubric notes so main demo and Quickstart-open images
+  have distinct roles.
+
+## 0.1.1 - 2026-07-21
+
+- Refined the first-run experience so Quickstart stays opt-in, source readiness
+  appears before optional runtime/bridge setup, and Graph/Pages/Details remain
+  behind explicit inspection or citation actions.
+- Added operational first-user gates for cold-start/no-services, missing
+  `llmwiki-serve`, serve-only readiness, advanced-runtime recovery, Local I/O
+  visibility, citation/detail recovery, and live `llmwiki-serve` evidence.
+- Hardened live `llmwiki-serve` E2E startup on Windows by using the synced local
+  executable when available and passing explicit local CORS origins.
+- Kept the main ask button neutral (`Ask selected source` / `Ask selected
+  sources`) so sample wiki titles do not read like product-specific primary
+  actions.
+
+## 0.1.0 - 2026-07-21
+
+- Added tokenless npm Trusted Publishing release workflow and documentation for
+  the first public npm package.
 - Added CODEOWNERS for the planned Knowledge Bridge Labs maintainer team and
   hardened the automated PR review guide's changed-file rendering.
 - Polished the README first screen with badges, public-preview status,
@@ -107,9 +144,6 @@ begin. Dates use `YYYY-MM-DD`.
 - Added agent status, tool call trace, citations, and graph/detail continuity in
   the chat UI.
 - Documented local `llmwiki-serve` integration and OSS contribution checks.
-
-## 0.1.0 - 2026-06-30
-
 - Initial React client for querying served LLMWiki knowledge graphs.
 - Added connection inventory, Markdown answers, citation chips, graph overview,
   node list, and details panel.
