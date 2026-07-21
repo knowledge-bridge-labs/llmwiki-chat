@@ -1697,13 +1697,13 @@ export default function App() {
           <strong>LLMWiki Chat</strong>
           <span>Chat with selected LLMWiki sources and inspect grounded evidence</span>
         </div>
-        <AgentRuntimeList agents={agents} onChange={updateAgents} onDiscover={discoverRuntime} />
         <ConnectionList
           connections={connections}
           onChange={updateConnections}
           onDiscover={discover}
           sectionRef={sourceSectionRef}
         />
+        <AgentRuntimeList agents={agents} onChange={updateAgents} onDiscover={discoverRuntime} />
       </aside>
     </main>
   )
@@ -1992,6 +1992,7 @@ function QuickstartPanel({
   const localBridge = agents.find((agent) => agent.id === 'bridge-a2a')
   const localDevelopmentRuntime = agents.find((agent) => agent.protocol === 'mock-agent')
   const bridgeChecking = localBridge?.status === 'checking'
+  const bridgeError = localBridge?.status === 'error'
   const sourceChecking = sampleSource?.status === 'checking'
   const bridgeReady = localBridge?.status === 'ready'
   const sourceReady = sampleSource?.status === 'ready'
@@ -2052,12 +2053,12 @@ function QuickstartPanel({
         <div className="quickstart-grid">
           <div>
             <h3>Serve a wiki</h3>
-            <pre className="quickstart-command"><code>{quickstartServeCommand.join('\n')}</code></pre>
+            <pre className="quickstart-command" tabIndex={0} aria-label="Serve a wiki command"><code>{quickstartServeCommand.join('\n')}</code></pre>
             <small>Replace <code>/path/to/wiki</code> with your Markdown, Obsidian, or LLMWiki folder.</small>
           </div>
           <div>
             <h3>Use the bundled sample</h3>
-            <pre className="quickstart-command"><code>{quickstartSampleServeCommand.join('\n')}</code></pre>
+            <pre className="quickstart-command" tabIndex={0} aria-label="Bundled sample command"><code>{quickstartSampleServeCommand.join('\n')}</code></pre>
             <small>Use this when you want a known-good source before trying private content.</small>
           </div>
         </div>
@@ -2144,6 +2145,13 @@ function QuickstartPanel({
                   </dd>
                 </div>
               </dl>
+              {bridgeError ? (
+                <p className="quickstart-guidance">
+                  Bridge test failed. Start or restart <code>llmwiki-agent-bridge</code>,
+                  confirm <code>http://127.0.0.1:8788</code> is reachable, or
+                  skip/continue serve-only.
+                </p>
+              ) : null}
               <div className="quickstart-actions" role="group" aria-label="Quickstart bridge actions">
                 <button className="secondary-action" type="button" onClick={onTestLocalBridge} disabled={!localBridge || bridgeChecking}>
                   {bridgeChecking ? 'Testing local bridge...' : 'Test local bridge'}
@@ -2164,7 +2172,7 @@ function QuickstartPanel({
                 <div className="quickstart-grid">
                   <div>
                     <h3>Optional: start the local bridge</h3>
-                    <pre className="quickstart-command"><code>{quickstartBridgeCommand.join('\n')}</code></pre>
+                    <pre className="quickstart-command" tabIndex={0} aria-label="Start local bridge command"><code>{quickstartBridgeCommand.join('\n')}</code></pre>
                     <small>Use this only after you have a real runtime endpoint to put behind the bridge.</small>
                   </div>
                 </div>
@@ -3144,8 +3152,8 @@ function AgentRuntimeList({
   return (
     <SidebarSection
       className="agent-runtime-section"
-      ariaLabel="Agent bridge"
-      title="Agent Bridge"
+      ariaLabel="Agent runtime"
+      title="Agent Runtime"
       summary={selectedAgent ? runtimeSummaryLabel(selectedAgent, selectedAgent.status) : 'No runtime selected'}
       tone={agentSectionTone}
       statusLabel={agentSectionStatus}

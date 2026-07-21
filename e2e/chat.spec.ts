@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { routeSamplePackagingWiki } from './support/samplePackagingWiki'
 
@@ -38,7 +39,10 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await expect(page.getByText('llmwiki-markdown')).toHaveCount(1)
   await expect(page.getByText('atomicstrata/llm-wiki-compiler')).toHaveCount(1)
-  await expect(page.getByLabel('Agent runtime status ready')).toBeVisible()
+  const localDevelopmentRuntimeCard = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('radio', { name: /Local Development Runtime/ }) })
+  await expect(localDevelopmentRuntimeCard.getByLabel('Agent runtime status ready')).toBeVisible()
   await expect(
     page
       .getByRole('article')
@@ -454,6 +458,11 @@ test('shows browser-safe quickstart commands and reuses source checks', async ({
   await expect(quickstart).toContainText('llmwiki-serve==0.2.0')
   await expect(quickstart).toContainText('/path/to/wiki')
 
+  await page.setViewportSize({ width: 500, height: 720 })
+  await quickstart.getByText('Show llmwiki-serve commands').click()
+  await expectQuickstartPanelNoHorizontalOverflow(page)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
   sourceAvailable = true
   await sourceStep.getByRole('button', { name: 'Test sample source' }).click()
   await expect(page.getByRole('article').filter({ hasText: 'Sample Packaging LLMWiki' }).getByLabel('Connection status ready')).toBeVisible()
@@ -488,6 +497,10 @@ test('shows browser-safe quickstart commands and reuses source checks', async ({
   await expect(advancedRuntime.getByRole('button', { name: 'Test local bridge' })).toBeVisible()
   await advancedRuntime.getByRole('button', { name: 'Test local bridge' }).click()
   await expect(page.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+  await expect(advancedRuntime).toContainText('Bridge test failed')
+  await expect(advancedRuntime).toContainText('Start or restart llmwiki-agent-bridge')
+  await expect(advancedRuntime).toContainText('confirm http://127.0.0.1:8788')
+  await expect(advancedRuntime).toContainText('skip/continue serve-only')
   await expect(advancedRuntime).toContainText('No bridge or LLM endpoint? Skip this')
   await expect(runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
   await runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' }).click()
@@ -499,6 +512,30 @@ test('shows browser-safe quickstart commands and reuses source checks', async ({
   await expectQuickstartStatusInsidePanel(page)
   await advancedRuntime.getByRole('button', { name: 'Skip and close' }).click()
   await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+})
+
+test('quickstart states pass focused accessibility scans', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/')
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+  await expectNoAxeViolations(page, 'default empty state', '.chat-panel')
+
+  await page.getByRole('button', { name: 'Show Quickstart' }).click()
+  const quickstart = page.getByRole('region', { name: 'Quickstart' })
+  await expect(quickstart).toBeVisible()
+  await expectNoAxeViolations(page, 'opened quickstart', '#quickstart-panel')
+
+  await page.setViewportSize({ width: 500, height: 720 })
+  await quickstart.getByText('Show llmwiki-serve commands').click()
+  await expectQuickstartPanelNoHorizontalOverflow(page)
+  await expectNoAxeViolations(page, 'mobile quickstart with source commands', '#quickstart-panel')
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const runtimeStep = quickstart.getByRole('region', { name: 'Step 2 runtime choice' })
+  await expect(runtimeStep).toBeVisible()
+  await runtimeStep.getByRole('button', { name: 'Show optional bridge/runtime steps' }).click()
+  await expect(runtimeStep.getByRole('region', { name: 'Optional bridge runtime steps' })).toBeVisible()
+  await expectNoAxeViolations(page, 'advanced quickstart', '#quickstart-panel')
 })
 
 test('labels suggested prompts as ask actions and clears the composer when they run', async ({ page }) => {
@@ -958,7 +995,7 @@ test('keeps Hermes explicitly selectable across add and remove cycles', async ({
   await page.goto('/')
   await expect(page.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
 
-  await openSidebarSection(page.getByRole('region', { name: 'Agent bridge' }))
+  await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
   const addRuntime = page.locator('.add-runtime-disclosure')
   await expect(addRuntime).toHaveAttribute('open', '')
   await expect(page.getByLabel('Runtime type')).toContainText('Hermes')
@@ -1218,7 +1255,7 @@ async function selectRuntimeCard(runtimeCard: Locator): Promise<void> {
 }
 
 async function openAgentBridgeSection(page: Page): Promise<void> {
-  await openSidebarSection(page.getByRole('region', { name: 'Agent bridge' }))
+  await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
 }
 
 async function openKnowledgeSourcesSection(page: Page): Promise<void> {
@@ -1231,6 +1268,55 @@ async function openSidebarSection(section: Locator): Promise<void> {
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   }
+}
+
+async function expectNoAxeViolations(page: Page, label: string, selector: string): Promise<void> {
+  const results = await new AxeBuilder({ page }).include(selector).analyze()
+  expect(
+    results.violations,
+    [
+      `${label} axe violations:`,
+      ...results.violations.map((violation) => {
+        const nodes = violation.nodes.map((node) => node.target.join(' ')).join(', ')
+        return `${violation.id}: ${violation.help} (${nodes})`
+      }),
+    ].join('\n'),
+  ).toEqual([])
+}
+
+async function expectQuickstartPanelNoHorizontalOverflow(page: Page): Promise<void> {
+  const metrics = await page.locator('.quickstart-panel').evaluate((panel) => {
+    const panelBox = panel.getBoundingClientRect()
+    const checkedElements = Array.from(panel.querySelectorAll(
+      '.quickstart-command-details, .quickstart-grid, .quickstart-grid > div, .quickstart-command',
+    ))
+
+    return {
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      panelLeft: panelBox.left,
+      panelRight: panelBox.right,
+      overflowingElements: checkedElements
+        .map((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: element.className,
+            text: element.textContent?.trim().slice(0, 80) || element.tagName.toLowerCase(),
+            left: box.left,
+            right: box.right,
+            panelLeft: panelBox.left,
+            panelRight: panelBox.right,
+          }
+        })
+        .filter((box) => box.left < panelBox.left - 1 || box.right > panelBox.right + 1),
+    }
+  })
+
+  expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
+  expect(metrics.panelLeft).toBeGreaterThanOrEqual(-1)
+  expect(metrics.panelRight).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
+  expect(metrics.overflowingElements).toEqual([])
 }
 
 async function expectQuickstartStatusInsidePanel(page: Page): Promise<void> {

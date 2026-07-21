@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -161,6 +161,11 @@ function a2aAgentResultResponse(
   })
 }
 
+function setInputValue(input: HTMLElement, value: string) {
+  fireEvent.change(input, { target: { value } })
+  expect(input).toHaveValue(value)
+}
+
 async function askCustomA2aAnswer(
   answer: string,
   result: {
@@ -192,15 +197,13 @@ async function askCustomA2aAnswer(
   const sourceCard = screen.getByRole('checkbox', { name: 'Sample Wiki' }).closest('article')
   expect(sourceCard).toBeTruthy()
   await openSourceSetup(user, sourceCard as HTMLElement)
-  await user.clear(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'))
-  await user.type(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'), publicSourceUrl)
+  setInputValue(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'), publicSourceUrl)
   await user.click(within(sourceCard as HTMLElement).getByRole('button', { name: 'Test source' }))
   expect(await within(sourceCard as HTMLElement).findByLabelText('Connection status ready')).toBeInTheDocument()
 
   const runtimeCard = await addRuntime(user, 'Custom A2A')
   await openRuntimeSetup(user, runtimeCard as HTMLElement)
-  await user.clear(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'))
-  await user.type(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'), customA2aRuntimeUrl)
+  setInputValue(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'), customA2aRuntimeUrl)
   await user.click(within(runtimeCard as HTMLElement).getByRole('button', { name: 'Test runtime' }))
   expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
 
@@ -208,7 +211,7 @@ async function askCustomA2aAnswer(
   if (options.disableLocalIoLogging) {
     await user.click(screen.getByRole('checkbox', { name: /Local I\/O logging/ }))
   }
-  await user.type(screen.getByLabelText('Question'), question)
+  setInputValue(screen.getByLabelText('Question'), question)
   await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
 
   return screen.getByRole('region', { name: 'Chat' })
@@ -439,11 +442,13 @@ describe('LLMWiki Chat', () => {
     expect(within(localSummary).getByText('Runtime and endpoint details')).toBeInTheDocument()
     expect(within(localSummary).getByText('Local Development Runtime')).toBeInTheDocument()
     expect(within(localSummary).getByText(/http:\/\/127\.0\.0\.1:8765/)).toBeInTheDocument()
-    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
-    expect(within(agentBridge).getByRole('heading', { name: 'Agent Bridge' })).toBeInTheDocument()
-    const bridgeCard = within(agentBridge).getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }).closest('article')
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const agentRuntime = screen.getByRole('region', { name: 'Agent runtime' })
+    expect(sources.compareDocumentPosition(agentRuntime) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(agentRuntime).getByRole('heading', { name: 'Agent Runtime' })).toBeInTheDocument()
+    const bridgeCard = within(agentRuntime).getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }).closest('article')
     expect(bridgeCard).toBeTruthy()
-    const mcpBridgeCard = within(agentBridge).getByRole('radio', { name: /Local Agent Bridge \(MCP\)/ }).closest('article')
+    const mcpBridgeCard = within(agentRuntime).getByRole('radio', { name: /Local Agent Bridge \(MCP\)/ }).closest('article')
     expect(mcpBridgeCard).toBeTruthy()
     expect(within(mcpBridgeCard as HTMLElement).getByRole('radio', { name: /Local Agent Bridge \(MCP\)/ })).not.toBeChecked()
     const bridgeSetupToggle = (bridgeCard as HTMLElement).querySelector<HTMLButtonElement>('.runtime-card-toggle')
@@ -462,10 +467,10 @@ describe('LLMWiki Chat', () => {
     expect(within(bridgeCard as HTMLElement).getByText(/Agent Bridge A2A/)).toBeInTheDocument()
     expect(within(bridgeCard as HTMLElement).getByRole('button', { name: 'Test bridge' })).toBeInTheDocument()
     expect(within(bridgeCard as HTMLElement).getByRole('link', { name: 'Open bridge settings' })).toHaveAttribute('href', 'http://127.0.0.1:8788/settings')
-    const testingRuntime = within(agentBridge).getByText('Test-only local runtime').closest('details') as HTMLDetailsElement | null
+    const testingRuntime = within(agentRuntime).getByText('Test-only local runtime').closest('details') as HTMLDetailsElement | null
     expect(testingRuntime).toBeTruthy()
     expect(testingRuntime?.open).toBe(true)
-    expect(within(agentBridge).getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+    expect(within(agentRuntime).getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
     const addRuntime = screen.getByText('Add runtime', { selector: 'span' }).closest('details') as HTMLDetailsElement | null
     expect(addRuntime).toBeTruthy()
     expect(addRuntime?.open).toBe(true)
@@ -477,10 +482,9 @@ describe('LLMWiki Chat', () => {
     expect(within(knowledgeMap).queryByRole('button', { name: 'Explore source graph' })).not.toBeInTheDocument()
     expect(within(knowledgeMap).queryByText(/fallback/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Inspector scope' })).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Knowledge sources' })).toBeInTheDocument()
+    expect(sources).toBeInTheDocument()
     expect(screen.getByLabelText('Question')).toBeInTheDocument()
     expect(screen.getByLabelText('Question')).toHaveValue('')
-    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
     expect(within(sources).getByText('Sample Wiki')).toBeInTheDocument()
     expect(within(sources).getByLabelText('Source selection selected')).toBeInTheDocument()
   })
@@ -572,6 +576,10 @@ describe('LLMWiki Chat', () => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes('http://127.0.0.1:8788/.well-known/agent-card.json'))).toBe(true)
     })
     expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+    expect(await within(advancedRuntime).findByText(/Bridge test failed/)).toBeInTheDocument()
+    expect(within(advancedRuntime).getByText(/Start or restart/)).toBeInTheDocument()
+    expect(within(advancedRuntime).getAllByText(/http:\/\/127\.0\.0\.1:8788/).length).toBeGreaterThan(0)
+    expect(within(advancedRuntime).getByText(/skip\/continue serve-only/)).toBeInTheDocument()
     expect(within(advancedRuntime).getByText(/No bridge or LLM endpoint\? Skip this/)).toBeInTheDocument()
     expect(within(runtimeStep).getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
     await user.click(within(runtimeStep).getByRole('button', { name: 'Use Local Development Runtime' }))
@@ -619,7 +627,7 @@ describe('LLMWiki Chat', () => {
       expect(sourceToggle).toHaveAttribute('aria-expanded', 'false')
     })
 
-    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
+    const agentBridge = screen.getByRole('region', { name: 'Agent runtime' })
     const bridgeToggleElement = agentBridge.querySelector<HTMLButtonElement>('.sidebar-section-toggle')
     expect(bridgeToggleElement).toBeTruthy()
     const bridgeToggle = bridgeToggleElement as HTMLButtonElement
@@ -945,7 +953,7 @@ describe('LLMWiki Chat', () => {
     expect(bridgeSourceCard).toBeTruthy()
     await user.click(within(bridgeSourceCard as HTMLElement).getByRole('button', { name: 'Use only this source' }))
 
-    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
+    const agentBridge = screen.getByRole('region', { name: 'Agent runtime' })
     const bridgeCard = within(agentBridge).getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }).closest('article')
     expect(bridgeCard).toBeTruthy()
     await openRuntimeSetup(user, bridgeCard as HTMLElement)
@@ -1084,7 +1092,7 @@ describe('LLMWiki Chat', () => {
     await user.click(within(sources).getByRole('checkbox', { name: 'Bridge Beta' }))
     expect(within(sources).getByRole('checkbox', { name: 'Bridge Beta' })).not.toBeChecked()
 
-    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
+    const agentBridge = screen.getByRole('region', { name: 'Agent runtime' })
     const bridgeToggleElement = agentBridge.querySelector<HTMLButtonElement>('.sidebar-section-toggle')
     expect(bridgeToggleElement).toBeTruthy()
     const bridgeToggle = bridgeToggleElement as HTMLButtonElement
@@ -1149,8 +1157,8 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
-    const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
-    await user.click(within(agentBridge).getByRole('button', { name: /Configure Agent Bridge/ }))
+    const agentBridge = screen.getByRole('region', { name: 'Agent runtime' })
+    await user.click(within(agentBridge).getByRole('button', { name: /Configure Agent Runtime/ }))
 
     const addRuntime = screen.getByText('Add runtime', { selector: 'span' }).closest('details') as HTMLDetailsElement | null
     expect(addRuntime).toBeTruthy()
@@ -2235,15 +2243,13 @@ describe('LLMWiki Chat', () => {
     const sourceCard = screen.getByRole('checkbox', { name: 'Sample Wiki' }).closest('article')
     expect(sourceCard).toBeTruthy()
     await openSourceSetup(user, sourceCard as HTMLElement)
-    await user.clear(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'))
-    await user.type(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'), publicSourceUrl)
+    setInputValue(within(sourceCard as HTMLElement).getByLabelText('Sample Wiki URL'), publicSourceUrl)
     await user.click(within(sourceCard as HTMLElement).getByRole('button', { name: 'Test source' }))
     expect(await within(sourceCard as HTMLElement).findByLabelText('Connection status ready')).toBeInTheDocument()
 
     const runtimeCard = await addRuntime(user, 'Custom A2A')
     await openRuntimeSetup(user, runtimeCard as HTMLElement)
-    await user.clear(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'))
-    await user.type(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'), customA2aRuntimeUrl)
+    setInputValue(within(runtimeCard as HTMLElement).getByLabelText('Custom A2A runtime URL'), customA2aRuntimeUrl)
     await user.click(within(runtimeCard as HTMLElement).getByRole('button', { name: 'Test runtime' }))
     expect(await within(runtimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
     await user.click(within(runtimeCard as HTMLElement).getByRole('radio', { name: /Custom A2A/ }))

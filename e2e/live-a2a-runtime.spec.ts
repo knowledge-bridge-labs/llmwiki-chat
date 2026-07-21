@@ -130,7 +130,7 @@ async function selectRuntimeCard(runtimeCard: Locator): Promise<void> {
 }
 
 async function openAgentBridgeSection(page: Page): Promise<void> {
-  await openSidebarSection(page.getByRole('region', { name: 'Agent bridge' }))
+  await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
 }
 
 async function openSidebarSection(section: Locator): Promise<void> {

@@ -17,3 +17,23 @@
 - [x] Update quickstart docs and release wording.
 - [x] Run typecheck, unit tests, focused e2e tests, and full `npm run check` for
       the current quickstart loop.
+
+## Loop 2
+
+- [x] Render Knowledge Sources before Agent Runtime in the left sidebar.
+- [x] Rename the runtime management section to visible `Agent Runtime` and ARIA
+      `Agent runtime` while preserving bridge runtime card names and
+      bridge-specific docs.
+- [x] Add explicit optional bridge failure recovery text for failed local bridge
+      checks.
+- [x] Add unit coverage for sidebar order, runtime section naming, and mocked
+      bridge 404 recovery.
+- [x] Add Playwright coverage for mocked bridge 404 recovery and 500px Step 1
+      command overflow.
+- [x] Add focused quickstart axe scans for default/open/mobile/advanced states
+      after `@axe-core/playwright` installed cleanly.
+- [x] Refresh README demo screenshot with the source-first sidebar and Agent
+      Runtime label.
+- [x] Stabilize Custom A2A/source URL and long-prompt test setup after full
+      validation exposed `user.type` URL interleaving in jsdom.
+- [x] Run Loop 2 focused validation commands and full `npm run check`.

@@ -4,6 +4,9 @@
 
 - Empty state shows a compact `Show Quickstart` entry point, but no Quickstart
   region by default.
+- Sidebar renders `Knowledge Sources` before `Agent Runtime`, and runtime
+  management uses the `Agent Runtime` visible heading / `Agent runtime` region
+  name.
 - Opening Quickstart moves keyboard focus to the Quickstart region.
 - Opening Quickstart first shows only Step 1 source setup for `llmwiki-serve`.
 - Step 1 includes browser/process boundary copy, `llmwiki-serve` commands, source
@@ -19,11 +22,19 @@
   disclosure.
 - Missing bridge/runtime guidance offers install/start docs or skip/close without
   blocking serve-only usage.
+- Failed optional local bridge checks show recovery copy to start/restart
+  `llmwiki-agent-bridge`, confirm `http://127.0.0.1:8788`, or
+  skip/continue serve-only.
 - `Skip and close`, `Finish Quickstart`, and `Continue serve-only` leave Local
   Development Runtime selected and hide the panel.
 - `Test local bridge` selects the local A2A bridge and runs the existing bridge
   discovery path only from optional advanced setup.
 - Quickstart status content stays inside the panel on desktop and mobile widths.
+- Opening the Step 1 `llmwiki-serve` command disclosure at a 500px viewport does
+  not create document or quickstart-panel horizontal overflow.
+- Focused quickstart axe scans cover the default empty state, opened
+  quickstart, mobile quickstart with source commands, and advanced runtime
+  quickstart panel.
 - Sample matrix verifies required fixture/query classes and includes a
   multi-source global query through the chat UI.
 
@@ -32,7 +43,7 @@
 ```sh
 npm run typecheck
 npx vitest run src/App.test.tsx src/agentRuntimes.test.ts
-npx playwright test e2e/chat.spec.ts --grep "quickstart"
+npx playwright test e2e/chat.spec.ts --grep "quickstart|Hermes"
 npm run check
 npm run test:e2e:sample-matrix
 npm run test:e2e:sample-matrix:bridge
