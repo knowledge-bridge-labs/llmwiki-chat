@@ -105,6 +105,9 @@ Runtime invocation:
 - `POST message:send`
 - includes `Authorization: Bearer ...` when the runtime setup token is set
 - request body contains `data.query`
+- for Agent Bridge transports only, request body contains
+  `data.orchestrationMode` and compatibility alias `data.mode`, with one of
+  `evidence-only`, `delegated-runtime`, or `hybrid`
 - request body contains `data.message` in A2A `Message` shape with
   `kind: "message"`, `role: "user"`, `messageId`, optional `contextId`, text
   parts, and `metadata.llmwiki` thread/session/turn identifiers
@@ -212,6 +215,20 @@ enter the bridge URL such as `http://127.0.0.1:8788`, click `Test bridge`, and
 ask normally after the bridge reports ready. Named slots become ready only when
 the bridge agent card identity matches the selected slot.
 
+The Agent Bridge runtime card has two independent choices:
+
+- Runtime transport/mode: how the browser calls the bridge, such as Agent Bridge
+  A2A or Agent Bridge MCP.
+- Bridge orchestration mode: how the bridge handles each run. `evidence-only`
+  asks the bridge for source evidence without runtime delegation,
+  `delegated-runtime` delegates answer composition to the bridge-configured
+  runtime, and `hybrid` lets the bridge combine those strategies.
+
+`llmwiki-chat` persists the selected bridge orchestration mode as non-secret
+runtime configuration and sends it only on Agent Bridge A2A/MCP run payloads as
+`orchestrationMode` plus compatibility alias `mode`. Non-bridge runtimes do not
+receive these fields.
+
 After a bridge is ready, chat calls the bridge MCP `llmwiki_list_sources` tool
 and renders the returned sources as bridge-managed, read-only Knowledge Source
 cards. Edit, remove, or register those sources from bridge settings. Use chat's
@@ -249,6 +266,8 @@ Example request body:
 {
   "data": {
     "query": "What needs review?",
+    "orchestrationMode": "delegated-runtime",
+    "mode": "delegated-runtime",
     "messages": [
       { "role": "user", "content": "What changed yesterday?" },
       { "role": "assistant", "content": "The release checklist changed." },

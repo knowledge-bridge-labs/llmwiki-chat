@@ -28,6 +28,17 @@ const bridgeMcpRuntime: AgentConnection = {
   status: 'ready',
 }
 
+const bridgeA2aRuntime: AgentConnection = {
+  id: 'bridge-a2a',
+  name: 'Local Agent Bridge (A2A)',
+  protocol: 'bridge-a2a',
+  url: 'http://127.0.0.1:8788',
+  bridge: { mode: 'a2a', local: true },
+  orchestrationMode: 'evidence-only',
+  selected: true,
+  status: 'ready',
+}
+
 const knowledgeSource: Connection = {
   id: 'wiki',
   name: 'Serve Wiki',
@@ -247,8 +258,13 @@ describe('BridgeMcpAgentRuntimeClient', () => {
       })
     }))
 
-    const result = await new BridgeMcpAgentRuntimeClient(bridgeMcpRuntime).run({
-      agent: bridgeMcpRuntime,
+    const hybridBridgeMcpRuntime: AgentConnection = {
+      ...bridgeMcpRuntime,
+      orchestrationMode: 'hybrid',
+    }
+
+    const result = await new BridgeMcpAgentRuntimeClient(hybridBridgeMcpRuntime).run({
+      agent: hybridBridgeMcpRuntime,
       knowledgeSources: [knowledgeSource, unreadyKnowledgeSource],
       query: 'What is ready?',
       messages,
@@ -262,6 +278,8 @@ describe('BridgeMcpAgentRuntimeClient', () => {
       name: string
       arguments: {
         query: string
+        orchestrationMode: string
+        mode: string
         message: Record<string, unknown>
         messages: typeof messages
         threadId: string
@@ -277,6 +295,8 @@ describe('BridgeMcpAgentRuntimeClient', () => {
     expect(params.name).toBe('llmwiki_agent_run')
     expect(params.arguments).toMatchObject({
       query: 'What is ready?',
+      orchestrationMode: 'hybrid',
+      mode: 'hybrid',
       message: {
         kind: 'message',
         messageId: 'message-mcp-test',
@@ -404,6 +424,38 @@ describe('ExternalA2aAgentRuntimeClient', () => {
       'Bearer runtime-secret',
       'Bearer runtime-secret',
     ])
+  })
+
+  it('sends selected bridge orchestration mode to A2A bridge runs', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/agent-card.json')) {
+        return Response.json({ name: 'Local Agent Bridge', url: '/message:send' })
+      }
+      expect(url).toBe('http://127.0.0.1:8788/message:send')
+      requestBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+      return Response.json({
+        status: { state: 'completed' },
+        message: { parts: [{ kind: 'text', text: 'Bridge A2A answer.' }] },
+        artifacts: [],
+      })
+    }))
+
+    const result = await new ExternalA2aAgentRuntimeClient(bridgeA2aRuntime).run({
+      agent: bridgeA2aRuntime,
+      knowledgeSources: [knowledgeSource],
+      query: 'Use evidence only.',
+    })
+
+    expect(result.answer).toBe('Bridge A2A answer.')
+    expect(requestBody).toMatchObject({
+      data: {
+        query: 'Use evidence only.',
+        orchestrationMode: 'evidence-only',
+        mode: 'evidence-only',
+      },
+    })
   })
 
   it('does not mark a named runtime ready from a generic A2A card', async () => {
@@ -624,6 +676,8 @@ describe('ExternalA2aAgentRuntimeClient', () => {
       },
     })
     expect(data.runtimeContext.toolSelection).toContain('does not classify intent by keyword')
+    expect(data).not.toHaveProperty('orchestrationMode')
+    expect(data).not.toHaveProperty('mode')
     expect(data.knowledgeSources).toEqual([
       {
         id: 'wiki',

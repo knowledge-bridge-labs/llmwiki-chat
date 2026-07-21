@@ -15,6 +15,9 @@ import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } 
 import remarkGfm from 'remark-gfm'
 import {
   agentClientFor,
+  bridgeOrchestrationModeFor,
+  bridgeOrchestrationModes,
+  defaultBridgeOrchestrationMode,
   discoverAgentRuntime,
   discoverBridgeKnowledgeSources,
   starterAgentConnections,
@@ -26,6 +29,7 @@ import type {
   AgentProtocol,
   AgentRuntimeMessage,
   AgentStep,
+  BridgeOrchestrationMode,
   ChatMessage,
   Citation,
   Connection,
@@ -125,6 +129,7 @@ interface PersistedAgentConfig {
   url: string
   selected: boolean
   settingsUrl?: string
+  orchestrationMode?: BridgeOrchestrationMode
 }
 
 interface AgentToolCallTrace {
@@ -342,6 +347,9 @@ function mergePersistedAgents(persistedAgents: PersistedAgentConfig[]): AgentCon
       added: Boolean(persisted.added),
       url: persisted.url,
       settingsUrl: persisted.settingsUrl,
+      ...(isBridgeAgent(starter)
+        ? { orchestrationMode: persisted.orchestrationMode || starter.orchestrationMode || defaultBridgeOrchestrationMode }
+        : {}),
       selected: starter.id === selectedAgentId,
       status: agentStatusFromPersistedConfig(starter, persisted),
     }
@@ -431,6 +439,7 @@ function toAgentStorageConfig(agent: AgentConnection): PersistedAgentConfig {
     settingsUrl: agent.settingsUrl || '',
   }
   if (agent.added) config.added = true
+  if (isBridgeAgent(agent)) config.orchestrationMode = bridgeOrchestrationModeFor(agent)
   return config
 }
 
@@ -483,6 +492,9 @@ function toPersistedAgentConfig(value: unknown): PersistedAgentConfig | null {
     url: value.url,
     selected: value.selected,
     settingsUrl: typeof value.settingsUrl === 'string' ? value.settingsUrl : '',
+    orchestrationMode: typeof value.orchestrationMode === 'string' && isPersistedBridgeOrchestrationMode(value.orchestrationMode)
+      ? value.orchestrationMode
+      : undefined,
   }
 }
 
@@ -498,6 +510,10 @@ function isAgentProtocol(value: string): value is AgentProtocol {
     || value === 'deepagents'
     || value === 'copilot'
     || value === 'custom-a2a'
+}
+
+function isPersistedBridgeOrchestrationMode(value: string): value is BridgeOrchestrationMode {
+  return (bridgeOrchestrationModes as readonly string[]).includes(value)
 }
 
 function isBridgeAgent(agent: AgentConnection): boolean {
@@ -2374,7 +2390,14 @@ function connectionsForSelectedAgent(connections: Connection[], agent: AgentConn
 function runScopeKey(agents: AgentConnection[], connections: Connection[]): string {
   const agent = selectedAgentFromList(agents)
   const runtimeKey = agent
-    ? ['runtime', agent.id, agent.protocol, scopeUrlKey(agent.url || ''), agent.bearerToken || ''].join('\u0001')
+    ? [
+        'runtime',
+        agent.id,
+        agent.protocol,
+        scopeUrlKey(agent.url || ''),
+        agent.bearerToken || '',
+        isBridgeAgent(agent) ? bridgeOrchestrationModeFor(agent) : '',
+      ].join('\u0001')
     : 'runtime'
   const sourceKeys = connections
     .filter((connection) => connection.selected)
@@ -3125,6 +3148,27 @@ function AgentRuntimeList({
                 />
                 {agent.bearerToken?.trim() ? (
                   <small className="runtime-secret-status">Bearer token set for this tab only.</small>
+                ) : null}
+                {isBridgeAgent(agent) ? (
+                  <label className="runtime-orchestration-control">
+                    Bridge orchestration mode
+                    <select
+                      aria-label={`${agent.name} orchestration mode`}
+                      value={bridgeOrchestrationModeFor(agent)}
+                      onChange={(event) =>
+                        updateAgent(agent.id, { orchestrationMode: event.target.value as BridgeOrchestrationMode })
+                      }
+                    >
+                      {bridgeOrchestrationModes.map((mode) => (
+                        <option value={mode} key={mode}>
+                          {bridgeOrchestrationModeLabel(mode)}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      Controls how Agent Bridge handles evidence and runtime delegation for each run. This is separate from A2A/MCP transport.
+                    </small>
+                  </label>
                 ) : null}
                 {agent.error ? <p className="error">{agent.error}</p> : null}
                 <DiagnosticDetails diagnostic={agent.diagnostic} label="Runtime diagnostic" openByDefault={agent.status === 'error'} />
@@ -5514,6 +5558,12 @@ function sourceEndpointSummary(connection: Connection): string {
 
 function runtimeProtocolLabel(agent: AgentConnection): string {
   return agent.protocol === 'mock-agent' ? 'browser-local' : agent.protocol
+}
+
+function bridgeOrchestrationModeLabel(mode: BridgeOrchestrationMode): string {
+  if (mode === 'evidence-only') return 'Evidence only'
+  if (mode === 'hybrid') return 'Hybrid'
+  return 'Delegated runtime (default)'
 }
 
 function runtimeSummaryLabel(agent: AgentConnection, status: RuntimeStatus): string {

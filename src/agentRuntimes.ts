@@ -12,6 +12,7 @@ import type {
   AgentRuntimeA2aTextMessage,
   AgentRuntimeMessage,
   AgentStep,
+  BridgeOrchestrationMode,
   Citation,
   Connection,
   Diagnostic,
@@ -29,6 +30,20 @@ const BRIDGE_MCP_RUNTIME_TOOL_TIMEOUT_MS = 120_000
 const LOCAL_AGENT_BRIDGE_URL = 'http://127.0.0.1:8788'
 const AGENT_RUNTIME_MESSAGE_LIMIT = 16
 const CONVERSATION_SCHEMA_VERSION = 'llmwiki-chat.conversation.v1'
+
+export const bridgeOrchestrationModes = ['evidence-only', 'delegated-runtime', 'hybrid'] as const
+export const defaultBridgeOrchestrationMode: BridgeOrchestrationMode = 'delegated-runtime'
+
+export function isBridgeOrchestrationMode(value: string): value is BridgeOrchestrationMode {
+  return (bridgeOrchestrationModes as readonly string[]).includes(value)
+}
+
+export function bridgeOrchestrationModeFor(agent: AgentConnection): BridgeOrchestrationMode {
+  const mode = agent.orchestrationMode || ''
+  return isBridgeRuntimeProtocol(agent.protocol) && isBridgeOrchestrationMode(mode)
+    ? mode
+    : defaultBridgeOrchestrationMode
+}
 
 export interface AgentRunRequest {
   agent: AgentConnection
@@ -206,6 +221,7 @@ export const starterAgentConnections: AgentConnection[] = agentRuntimeRegistry.m
     protocol: runtime.protocol,
     url: runtime.url,
     bridge: runtime.bridge,
+    ...(isBridgeRuntimeProtocol(runtime.protocol) ? { orchestrationMode: defaultBridgeOrchestrationMode } : {}),
     status: runtime.status,
     description: runtime.description,
     selected: Boolean(runtime.selected),
@@ -1001,6 +1017,7 @@ function agentRunArguments(request: AgentRunRequest, usableSources: Connection[]
   const message = agentRuntimeA2aMessage(request)
   return {
     query: request.query,
+    ...bridgeOrchestrationArguments(request.agent),
     ...(message ? { message } : {}),
     messages,
     ...(request.threadId ? { threadId: request.threadId } : {}),
@@ -1009,6 +1026,15 @@ function agentRunArguments(request: AgentRunRequest, usableSources: Connection[]
     runtimeContext: runtimeContextDescriptor(request, usableSources, conversation),
     knowledgeSources: usableSources.map(knowledgeSourceDescriptor),
     tools: usableSources.map(runtimeToolDescriptor),
+  }
+}
+
+function bridgeOrchestrationArguments(agent: AgentConnection): Record<string, unknown> {
+  if (!isBridgeRuntimeProtocol(agent.protocol)) return {}
+  const orchestrationMode = bridgeOrchestrationModeFor(agent)
+  return {
+    orchestrationMode,
+    mode: orchestrationMode,
   }
 }
 
@@ -1308,6 +1334,10 @@ function isAgentRunPayload(payload: Record<string, unknown>): boolean {
 
 function selectedKnowledgeSources(request: AgentRunRequest): Connection[] {
   return request.knowledgeSources.filter((source) => source.selected && source.status === 'ready')
+}
+
+function isBridgeRuntimeProtocol(protocol: AgentProtocol): boolean {
+  return protocol === 'bridge-a2a' || protocol === 'bridge-mcp'
 }
 
 function isCanceledRequestError(error: unknown): boolean {

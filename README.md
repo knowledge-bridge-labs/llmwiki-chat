@@ -103,7 +103,10 @@ Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 8. When the bridge is ready, chat discovers the bridge's registered Knowledge
    Sources and shows them as bridge-managed, read-only source cards. Edit those
    sources in the bridge settings page. Keep direct source cards in chat for
-   standalone `llmwiki-serve` testing and debugging.
+   standalone `llmwiki-serve` testing and debugging. Bridge runtime transport
+   (`A2A` or `MCP`) is separate from Bridge orchestration mode; use the bridge
+   card selector to choose `evidence-only`, `delegated-runtime`, or `hybrid` per
+   chat runtime configuration.
 9. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
 10. Review the answer, citations, artifacts, and trace before treating the result
@@ -174,6 +177,14 @@ reference image.
 | Local Development Runtime | You need deterministic UI, trace, citation, and graph rendering checks. | The local runtime is selected, answer traces render, and no production model quality claim is made. |
 | Custom A2A runtime | You have an externally managed runtime that exposes an A2A-style agent card and `message:send`. | Runtime URL policy passes, `Test runtime` marks it ready, and selected sources are reachable by the runtime or proxy path. |
 | Named runtime slot | You are validating a Hermes or DeepAgents-compatible runtime identity. | The agent card identity matches the selected slot; otherwise use Custom A2A. |
+
+Runtime mode/transport describes how the browser talks to the selected runtime
+(`browser-local`, A2A, MCP, or a named A2A slot). Bridge orchestration mode is a
+bridge-only per-run setting that controls whether `llmwiki-agent-bridge` returns
+source evidence only, delegates to its configured runtime, or uses a hybrid
+strategy. Changing Bridge orchestration mode does not edit bridge-managed
+Knowledge Sources; those remain read-only in chat and are managed from bridge
+settings.
 
 Answer review keeps run details with the assistant answer so the execution path
 does not jump after completion. When a runtime returns structured citation ids
