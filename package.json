@@ -43,6 +43,8 @@
     "dev": "vite --host 127.0.0.1",
     "clean:dist": "node scripts/clean-dist.mjs",
     "build": "tsc -b && vite build",
+    "postbuild": "npm run bundle:check",
+    "bundle:check": "node scripts/check-markdown-renderer-split.mjs",
     "build:release": "npm run clean:dist && npm run licenses:check && npm run build && npm run licenses:copy",
     "prepack": "npm run build:release",
     "pack:dry-run": "npm run build:release && npm run licenses:check && npm pack --dry-run --json --ignore-scripts",

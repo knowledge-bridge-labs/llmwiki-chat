@@ -16,7 +16,8 @@
 npm run typecheck
 npm run lint
 npx vitest run src/App.test.tsx -t "markdown|citation|selected page|XSS|html|image|GFM"
-npm run build
+npm run build # also runs the MarkdownRenderer bundle-split guard
+npm run bundle:check
 git diff --check
 ```
 
@@ -26,4 +27,7 @@ If feasible for runtime, also run:
 npx vitest run src/App.test.tsx
 ```
 
-The build must complete without Vite's default chunk-size warning.
+The build must complete without Vite's default chunk-size warning. The
+bundle-split guard must find a separate `MarkdownRenderer-*.js` chunk, confirm
+that the entry JS references it lazily, and confirm Markdown parser/renderer
+internals do not appear in the entry JS chunk.
