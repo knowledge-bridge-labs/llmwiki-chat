@@ -145,19 +145,20 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.1`.
+`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.2`.
 Source checkout remains supported for local development and release checks.
 See the [release checklist](docs/release.md) and hosted release status for the
 current posture.
 
 ## Demo
 
-![LLMWiki Chat source-first Quickstart flow](docs/assets/llmwiki-chat-workbench.png)
+![LLMWiki Chat source-first default workbench](docs/assets/llmwiki-chat-workbench.png)
 
-The screenshot shows the current opt-in, source-first Quickstart flow with the
-inspector still collapsed behind `Inspect map, pages, and details`. It uses
-sanitized loopback sample values and does not show a connected production
-runtime, private Knowledge Source, raw logs, or managed backend automation.
+The screenshot shows the default source-first workbench before the opt-in
+Quickstart is opened. The inspector remains collapsed behind `Inspect map,
+pages, and details`. It uses sanitized loopback sample values and does not show
+a connected production runtime, private Knowledge Source, raw logs, or managed
+backend automation.
 
 ## Workbench Modes
 
