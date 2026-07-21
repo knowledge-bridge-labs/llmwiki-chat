@@ -23,7 +23,8 @@ provides the browser inspection and review surface.
 
 [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Runtime adapters](docs/agent-runtime-adapters.md) | [Release checklist](docs/release.md) | [Docs portal](https://knowledge-bridge-labs.github.io/llmwiki-docs/) | [Quickstart docs](https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart) | [Release status](https://knowledge-bridge-labs.github.io/llmwiki-docs/status) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Support](SUPPORT.md) | [Changelog](CHANGELOG.md)
 
-> Public-preview note: npm install is available for `llmwiki-chat@0.1.1`.
+> Public-preview note: npm install is available for the published `llmwiki-chat`
+> package.
 > Source checkout remains supported for local development and release checks.
 
 It is not a model server, hosted RAG app, wiki compiler, ingestion pipeline,
@@ -145,7 +146,7 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.2`.
+`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.3`.
 Source checkout remains supported for local development and release checks.
 See the [release checklist](docs/release.md) and hosted release status for the
 current posture.
@@ -245,8 +246,8 @@ display.
 
 ## Package Artifact
 
-`llmwiki-chat@0.1.1` is published on npm. The npm package is a static
-distribution artifact for downstream static hosting and documentation review.
+`llmwiki-chat` is published on npm. The npm package is a static distribution
+artifact for downstream static hosting and documentation review.
 It contains the built browser app under `dist/`, public docs, package metadata,
 retained third-party license texts, and community governance files. It does not
 include a bridge binary, embedded bridge implementation, hosted service, model
