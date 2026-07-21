@@ -5430,8 +5430,8 @@ function sourceSummaryEyebrow(selectedConnections: Connection[]): string {
 function askButtonLabel(busy: boolean, selectedConnections: Connection[]): string {
   if (busy) return 'Running agent...'
   if (!selectedConnections.length) return 'Ask selected source'
-  if (selectedConnections.length === 1) return `Ask ${selectedConnections[0].name}`
-  return `Ask ${selectedConnections.length} sources`
+  if (selectedConnections.length === 1) return 'Ask selected source'
+  return 'Ask selected sources'
 }
 
 function readyAskStatusMessage(selectedConnections: Connection[]): string {

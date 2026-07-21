@@ -47,7 +47,7 @@ test('cold-start no-services first-time screen stays calm', async ({ page }) => 
   await expect(localSummary).toContainText('Local sample LLMWiki')
   await expect(localSummary).toContainText('local sample endpoint · 0 ready')
   await expect(localSummary).toContainText('Local Development Runtime')
-  await expect(page.getByRole('button', { name: 'Ask Local sample LLMWiki' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
   await expect(page.locator('#ask-status')).toHaveText('Some selected Knowledge Sources need attention. Review the error, retry failed sources, or deselect them.')
   await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeDisabled()
 
@@ -142,7 +142,7 @@ test('cold-start no-services advanced runtime accident recovers to serve-only', 
 
   await page.goto('/')
   await clearColdStartStorage(page)
-  await expect(page.getByRole('button', { name: 'Ask Local sample LLMWiki' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
 
   await page.getByRole('button', { name: 'Show Quickstart' }).click()
   const quickstart = page.getByRole('region', { name: 'Quickstart' })
@@ -157,19 +157,19 @@ test('cold-start no-services advanced runtime accident recovers to serve-only', 
   await expect(runtimeStep).toBeVisible()
   await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeEnabled()
 
   const hermesCard = await addRuntime(page, 'Hermes')
   await selectRuntimeCard(hermesCard)
   const reason = 'Select or configure Hermes so it can be checked, or choose a ready runtime.'
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
   await expect(page.getByText(reason).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeDisabled()
   await expect(runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
 
   await runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' }).click()
   await expect(page.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
 })
 
@@ -302,12 +302,12 @@ test('keeps answer scope and evidence graph clear when source selection changes 
   await page.getByLabel('New connection URL').fill('http://127.0.0.1:8766')
   await page.getByRole('button', { name: 'Create source' }).click()
   await expect(page.getByRole('checkbox', { name: 'Team Wiki' })).toBeChecked()
-  await expect(page.getByRole('button', { name: 'Ask 2 sources' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected sources' })).toBeDisabled()
   await expect(page.locator('#ask-status')).toHaveText('Some selected Knowledge Sources need attention. Review the error, retry failed sources, or deselect them.')
   await page.getByRole('checkbox', { name: 'Team Wiki' }).uncheck()
 
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   const runDetails = latestAssistant.getByLabel('Local Development Runtime run details')
@@ -344,13 +344,13 @@ test('reveals the start of a completed answer on mobile', async ({ page, isMobil
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await page.getByLabel('Question').fill('What needs review?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByLabel('Question')).toHaveValue('')
 
   await expect(page.locator('.message.assistant')).toContainText('Grounded answer')
 
   await page.getByLabel('Question').fill('Show current focus')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Grounded answer')
 
@@ -419,7 +419,7 @@ test('prioritizes source-first mobile first viewport', async ({ page, isMobile }
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Ask Sample Packaging LLMWiki' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Suggested prompts' })).toBeVisible()
   await expect(page.locator('.connection-status-details')).not.toHaveAttribute('open', '')
   await expect(page.getByRole('button', { name: 'Review sources' })).toBeHidden()
@@ -457,7 +457,7 @@ test('moves mobile citation selection to the Details panel', async ({ page, isMo
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await page.getByLabel('Question').fill('Show current focus')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Grounded answer')
@@ -512,7 +512,7 @@ test('keeps the tablet composer visible without horizontal overflow', async ({ p
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await page.getByLabel('Question').fill('What needs review?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.locator('.message.assistant').last()).toContainText('Grounded answer')
 
   const metrics = await page.evaluate(() => {
@@ -539,7 +539,7 @@ test('disables suggested prompts with the same inline reason for an unavailable 
   await selectRuntimeCard(runtimeCard)
 
   const reason = 'Select or configure Hermes so it can be checked, or choose a ready runtime.'
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeDisabled()
   await expect(page.getByText(reason).first()).toBeVisible()
   const promptButtons = page.getByRole('group', { name: 'Suggested prompts' }).getByRole('button')
   await expect(promptButtons).toHaveCount(3)
@@ -777,7 +777,7 @@ test('shows an explicit graph empty state when selected sources are cleared', as
 test('adds a second connection without losing the current thread', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByText(/Local Development Runtime used 1 knowledge source/)).toBeVisible()
 
   await openAddSource(page)
@@ -850,7 +850,7 @@ test('cancels a stalled run after source selection changes and keeps the next as
   await expect(page.getByRole('region', { name: 'Chat' })).toBeVisible()
 
   await page.getByLabel('Question').fill('First stalled question')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByRole('button', { name: 'Running agent...' })).toBeDisabled()
   await expect(page.getByText('Gathering evidence from the selected Knowledge Sources...')).toBeVisible()
 
@@ -864,7 +864,7 @@ test('cancels a stalled run after source selection changes and keeps the next as
 
   await page.getByRole('checkbox', { name: 'Sample Packaging LLMWiki' }).check()
   await page.getByLabel('Question').fill('Second question after switching')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Grounded answer')
   await expect(latestAssistant).toContainText('Second question after switching')
@@ -1030,9 +1030,9 @@ test('warns but allows a custom A2A Agent Runtime when selected LLMWiki sources 
   await expect(page.getByText(externalRuntimeSourceUrlAdvisoryMessage).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
   await page.getByLabel('Question').fill('Use the private HTTP source')
-  await expect(page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask selected source' })).toBeEnabled()
   await expect(page.locator('#ask-status')).toHaveText(externalRuntimeSourceUrlAdvisoryMessage)
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
   await expect(page.getByLabel('Custom A2A run details')).toBeVisible()
   expect(runtimeMessagePostCalls).toBeGreaterThan(0)
 })
@@ -1131,7 +1131,7 @@ test('uses a custom A2A Agent Runtime with selected LLMWiki sources', async ({ p
   await selectRuntimeCard(runtimeCard)
 
   await page.getByLabel('Question').fill('Use the external runtime')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('External runtime used selected LLMWiki sources')
@@ -1328,7 +1328,7 @@ test('keeps completed run details above the answer and displays runtime evidence
   await selectRuntimeCard(runtimeCard)
 
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const latestAssistant = page.locator('.message.assistant').last()
   await expect(latestAssistant).toContainText('Runtime answer cites')
@@ -1367,7 +1367,7 @@ test('only selected knowledge sources appear in the agent tool trace', async ({ 
   await page.getByRole('checkbox', { name: 'Team Wiki' }).click()
 
   await page.getByLabel('Question').fill('What is in this wiki?')
-  await page.getByRole('button', { name: 'Ask Sample Packaging LLMWiki' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const toolTrace = page.getByLabel('Tool call trace')
   await expandAgentTrace(page.getByLabel('Local Development Runtime run details'))

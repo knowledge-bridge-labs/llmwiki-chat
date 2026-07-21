@@ -9,7 +9,8 @@ import { isReachablePublicHttpsSourceUrl } from './urlPolicy'
 const externalRuntimeSourceUrlAdvisoryMessage = 'Warning: selected ready Knowledge Source URLs include HTTP, private, or non-public hosts. External runtimes may not be able to reach them; public or strict deployments should use public HTTPS sources or enforce runtime/proxy allowlists.'
 const customA2aRuntimeUrl = 'http://127.0.0.1:8770'
 const publicSourceUrl = 'https://wiki.example.test'
-const sampleAskButtonName = 'Ask Sample Wiki'
+const sampleAskButtonName = 'Ask selected source'
+const sampleHeadingName = 'Ask Sample Wiki'
 const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
 const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
 
@@ -446,7 +447,7 @@ describe('LLMWiki Chat', () => {
     expect(screen.getAllByText('LLMWiki Chat').length).toBeGreaterThan(0)
     expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
     expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).not.toBeChecked()
-    expect(await screen.findByRole('heading', { name: sampleAskButtonName })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: sampleHeadingName })).toBeInTheDocument()
     const localSummary = screen.getByLabelText('Local sample source and runtime')
     expect(within(localSummary).getByText('Sample Wiki')).toBeInTheDocument()
     expect(within(localSummary).getByText('local sample endpoint · 1 ready')).toBeInTheDocument()
@@ -964,7 +965,7 @@ describe('LLMWiki Chat', () => {
     const bridgeSource = await screen.findByRole('checkbox', { name: 'Bridge Sample' })
     expect(bridgeSource).toBeChecked()
     await user.type(screen.getByLabelText('Question'), 'What is in this wiki?')
-    await user.click(screen.getByRole('button', { name: 'Ask Bridge Sample' }))
+    await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
     await waitFor(() => {
       expect(messageSendCalls).toBe(1)
     })
@@ -3138,10 +3139,10 @@ describe('LLMWiki Chat', () => {
     const unreadyCard = screen.getByRole('checkbox', { name: 'Unready Wiki' }).closest('article')
     expect(unreadyCard).toBeTruthy()
     expect(await within(unreadyCard as HTMLElement).findByLabelText('Connection status error')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ask 2 sources' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Ask selected sources' })).toBeDisabled()
     expect(document.getElementById('ask-status')).toHaveTextContent('Some selected Knowledge Sources need attention. Review the error, retry failed sources, or deselect them.')
 
-    await user.click(screen.getByRole('button', { name: 'Ask 2 sources' }))
+    await user.click(screen.getByRole('button', { name: 'Ask selected sources' }))
 
     const calledUrls = fetchMock.mock.calls.map(([input]) => input instanceof Request ? input.url : String(input))
     expect(calledUrls).not.toContain('http://127.0.0.1:8765/query')
@@ -3169,7 +3170,7 @@ describe('LLMWiki Chat', () => {
     await user.click(within(unreadyCard as HTMLElement).getByRole('button', { name: 'Use only this source' }))
     expect(await within(unreadyCard as HTMLElement).findByLabelText('Connection status error')).toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Ask Unready Wiki' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: sampleAskButtonName })).toBeDisabled()
     expect(document.getElementById('ask-status')).toHaveTextContent('Some selected Knowledge Sources need attention. Review the error, retry failed sources, or deselect them.')
   })
 
