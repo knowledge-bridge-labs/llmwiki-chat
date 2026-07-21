@@ -353,7 +353,41 @@ dd,
   display: grid;
   gap: 12px;
   margin-top: 12px;
+  max-width: 100%;
+  min-width: 0;
   text-align: left;
+}
+
+.quickstart-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.quickstart-toggle p,
+.quickstart-toggle strong {
+  display: block;
+  margin: 0;
+}
+
+.quickstart-toggle p {
+  color: #5c667a;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.quickstart-toggle strong {
+  color: #10233f;
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 .quickstart-panel p,
@@ -406,6 +440,89 @@ dd,
   margin-bottom: 8px;
 }
 
+.quickstart-step,
+.quickstart-advanced-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #e5edf7;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.quickstart-step h3,
+.quickstart-advanced-panel h3 {
+  color: #10233f;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.quickstart-step p,
+.quickstart-advanced-panel p {
+  color: #4a5568;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.quickstart-step-label {
+  color: #5c667a;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.quickstart-docs {
+  color: #4a5568;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.quickstart-docs a {
+  color: #1d4ed8;
+  font-weight: 760;
+}
+
+.quickstart-ready-note {
+  border-radius: 7px;
+  background: #eef7ff;
+  padding: 8px;
+}
+
+.quickstart-guidance {
+  border-radius: 7px;
+  background: #fff8e8;
+  color: #6f5520;
+  padding: 8px;
+}
+
+.quickstart-advanced-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  border-top: 1px solid #e5edf7;
+  padding-top: 10px;
+}
+
+.quickstart-advanced-entry strong,
+.quickstart-advanced-entry span {
+  display: block;
+}
+
+.quickstart-advanced-entry strong {
+  color: #10233f;
+  font-size: 13px;
+}
+
+.quickstart-advanced-entry span {
+  color: #5c667a;
+  font-size: 12px;
+}
+
 .quickstart-grid > div {
   display: grid;
   gap: 6px;
@@ -434,21 +551,28 @@ dd,
 
 .quickstart-status {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   margin: 0;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .quickstart-status > div {
   display: grid;
-  grid-template-columns: minmax(110px, max-content) minmax(0, 1fr);
-  gap: 8px;
-  align-items: baseline;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  align-items: start;
+  min-width: 0;
 }
 
 .quickstart-status dt {
   color: #5c667a;
   font-size: 12px;
   font-weight: 760;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .quickstart-status dd {
@@ -456,13 +580,23 @@ dd,
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  max-width: 100%;
   min-width: 0;
   margin: 0;
 }
 
+.quickstart-status dd > .status-chip {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
 .quickstart-status dd > span:last-child {
+  display: block;
+  flex: 1 1 12rem;
+  max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .quickstart-actions {
@@ -2965,6 +3099,12 @@ dd {
 
   dl {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quickstart-status > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    align-items: start;
   }
 
   .connection-meta div {

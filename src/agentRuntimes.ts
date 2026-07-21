@@ -124,9 +124,8 @@ export const agentRuntimeRegistry: AgentRuntimeDefinition[] = [
     protocol: 'bridge-a2a',
     status: 'unknown',
     url: LOCAL_AGENT_BRIDGE_URL,
-    selected: true,
     bridge: { mode: 'a2a', local: true },
-    description: 'Default Agent Bridge connection using the A2A agent-card and message endpoint.',
+    description: 'Local Agent Bridge connection using the A2A agent-card and message endpoint.',
     createClient: (agent) => new ExternalA2aAgentRuntimeClient(agent),
   },
   {
@@ -162,6 +161,7 @@ export const agentRuntimeRegistry: AgentRuntimeDefinition[] = [
     name: 'Local Development Runtime',
     protocol: 'mock-agent',
     status: 'ready',
+    selected: true,
     description: 'Local development runtime for exercising the UI with deterministic fallback answers while still calling selected LLMWiki sources as real tools.',
     createClient: () => new DevelopmentMockAgentRuntimeClient(),
   },

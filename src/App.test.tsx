@@ -308,6 +308,16 @@ function writeStoredAgents(
   window.localStorage.setItem(agentRuntimeStorageKey, JSON.stringify({ version: 1, agents }))
 }
 
+function writeSelectedLocalBridgeAgent() {
+  writeStoredAgents([{
+    id: 'bridge-a2a',
+    name: 'Local Agent Bridge (A2A)',
+    protocol: 'bridge-a2a',
+    url: 'http://127.0.0.1:8788',
+    selected: true,
+  }])
+}
+
 function readStoredAgents() {
   return JSON.parse(window.localStorage.getItem(agentRuntimeStorageKey) || '{"agents":[]}') as {
     agents: Array<Record<string, unknown>>
@@ -420,13 +430,14 @@ describe('LLMWiki Chat', () => {
   it('renders connection inventory and composer', async () => {
     render(<App />)
     expect(screen.getAllByText('LLMWiki Chat').length).toBeGreaterThan(0)
-    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).not.toBeChecked()
     expect(await screen.findByRole('heading', { name: sampleAskButtonName })).toBeInTheDocument()
     const localSummary = screen.getByLabelText('Local sample source and runtime')
     expect(within(localSummary).getByText('Sample Wiki')).toBeInTheDocument()
     expect(within(localSummary).getByText('local sample endpoint · 1 ready')).toBeInTheDocument()
     expect(within(localSummary).getByText('Runtime and endpoint details')).toBeInTheDocument()
-    expect(within(localSummary).getByText('Local Agent Bridge (A2A)')).toBeInTheDocument()
+    expect(within(localSummary).getByText('Local Development Runtime')).toBeInTheDocument()
     expect(within(localSummary).getByText(/http:\/\/127\.0\.0\.1:8765/)).toBeInTheDocument()
     const agentBridge = screen.getByRole('region', { name: 'Agent bridge' })
     expect(within(agentBridge).getByRole('heading', { name: 'Agent Bridge' })).toBeInTheDocument()
@@ -453,11 +464,11 @@ describe('LLMWiki Chat', () => {
     expect(within(bridgeCard as HTMLElement).getByRole('link', { name: 'Open bridge settings' })).toHaveAttribute('href', 'http://127.0.0.1:8788/settings')
     const testingRuntime = within(agentBridge).getByText('Test-only local runtime').closest('details') as HTMLDetailsElement | null
     expect(testingRuntime).toBeTruthy()
-    expect(testingRuntime?.open).toBe(false)
-    expect(within(agentBridge).getByRole('radio', { name: /Local Development Runtime/ })).not.toBeChecked()
+    expect(testingRuntime?.open).toBe(true)
+    expect(within(agentBridge).getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
     const addRuntime = screen.getByText('Add runtime', { selector: 'span' }).closest('details') as HTMLDetailsElement | null
     expect(addRuntime).toBeTruthy()
-    expect(addRuntime?.open).toBe(false)
+    expect(addRuntime?.open).toBe(true)
     expect(screen.queryByRole('radio', { name: /Hermes/ })).not.toBeInTheDocument()
     const knowledgeMap = screen.getByRole('region', { name: 'Knowledge map' })
     expect(within(knowledgeMap).getAllByText('Sample Wiki').length).toBeGreaterThan(0)
@@ -474,36 +485,102 @@ describe('LLMWiki Chat', () => {
     expect(within(sources).getByLabelText('Source selection selected')).toBeInTheDocument()
   })
 
-  it('shows browser-safe quickstart commands and reuses existing test actions', async () => {
+  it('progressively reveals quickstart source, runtime, and optional bridge steps', async () => {
     const user = userEvent.setup()
-    const fetchMock = stubFetch()
+    let sourceAvailable = false
+    const bridgeAvailable = false
+    const fetchMock = stubFetch(() => Response.json(queryPayload()), (url) => {
+      if (url === 'http://127.0.0.1:8765/manifest' && !sourceAvailable) {
+        return new Response('source missing', { status: 404 })
+      }
+      if (url === 'http://127.0.0.1:8788/.well-known/agent-card.json' && !bridgeAvailable) {
+        return new Response('bridge missing', { status: 404 })
+      }
+      return undefined
+    })
 
     render(<App />)
 
+    expect(screen.queryByRole('region', { name: 'Quickstart' })).not.toBeInTheDocument()
+    const quickstartToggle = screen.getByRole('button', { name: 'Show Quickstart' })
+    expect(quickstartToggle).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(quickstartToggle)
+
+    expect(quickstartToggle).toHaveAttribute('aria-expanded', 'true')
     const quickstart = await screen.findByRole('region', { name: 'Quickstart' })
+    await waitFor(() => {
+      expect(quickstart).toHaveFocus()
+    })
     expect(within(quickstart).getByRole('heading', {
-      name: 'Start services in a shell, then verify them here.',
+      name: 'Step 1: connect llmwiki-serve.',
     })).toBeInTheDocument()
     expect(within(quickstart).getByText(/cannot install packages, start local processes/)).toBeInTheDocument()
+    expect(within(quickstart).getByText(/For a first pass, you only need/)).toBeInTheDocument()
+    const sourceStep = within(quickstart).getByRole('region', { name: 'Step 1 source setup' })
+    const sourceStatus = within(sourceStep).getByLabelText('Quickstart source status')
+    expect(within(sourceStatus).getByText('Sample source')).toBeInTheDocument()
+    expect(within(sourceStatus).getByText('http://127.0.0.1:8765')).toBeInTheDocument()
+    expect(within(sourceStep).getByText(/If this check fails or stays unknown/)).toBeInTheDocument()
+    expect(within(sourceStep).getByRole('button', { name: 'Test sample source' })).toBeInTheDocument()
+    expect(within(quickstart).queryByRole('region', { name: 'Step 2 runtime choice' })).not.toBeInTheDocument()
+    expect(within(quickstart).queryByRole('button', { name: 'Use Local Development Runtime' })).not.toBeInTheDocument()
+    expect(within(quickstart).queryByRole('button', { name: 'Test local bridge' })).not.toBeInTheDocument()
+    expect(within(quickstart).queryByText(/Hermes|DeepAgents|llmwiki-agent-bridge@0\.1\.0/)).not.toBeInTheDocument()
     expect(within(quickstart).getByText(/llmwiki-serve==0\.2\.0/)).toBeInTheDocument()
-    expect(within(quickstart).getByText(/llmwiki-agent-bridge@0\.1\.0/)).toBeInTheDocument()
     expect(within(quickstart).getByText('/path/to/wiki')).toBeInTheDocument()
 
-    await user.click(within(quickstart).getByRole('button', { name: 'Use Local Development Runtime' }))
-    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
-
     fetchMock.mockClear()
-    await user.click(within(quickstart).getByRole('button', { name: 'Test sample source' }))
+    sourceAvailable = true
+    await user.click(within(sourceStep).getByRole('button', { name: 'Test sample source' }))
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes('http://127.0.0.1:8765/manifest'))).toBe(true)
     })
+    const runtimeStep = await within(quickstart).findByRole('region', { name: 'Step 2 runtime choice' })
+    expect(within(runtimeStep).getByText(/Default: use Local Development Runtime/)).toBeInTheDocument()
+    expect(within(runtimeStep).getByText(/needs no external LLM endpoint/)).toBeInTheDocument()
+    expect(within(runtimeStep).getByText(/Serve-only path is ready/)).toBeInTheDocument()
+    expect(within(runtimeStep).getByRole('button', { name: 'Continue serve-only' })).toBeEnabled()
+    expect(within(runtimeStep).getByRole('button', { name: 'Show optional bridge/runtime steps' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(runtimeStep).queryByRole('button', { name: 'Test local bridge' })).not.toBeInTheDocument()
+    expect(within(runtimeStep).queryByText(/Hermes|DeepAgents|llmwiki-agent-bridge@0\.1\.0/)).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+
+    await user.click(within(runtimeStep).getByRole('button', { name: 'Show optional bridge/runtime steps' }))
+    const advancedRuntime = within(runtimeStep).getByRole('region', { name: 'Optional bridge runtime steps' })
+    expect(within(advancedRuntime).getByText(/No bridge or LLM endpoint\? Skip this/)).toBeInTheDocument()
+    expect(within(advancedRuntime).getByText(/Hermes, DeepAgents, or OpenAI-compatible runtimes/)).toBeInTheDocument()
+    expect(within(advancedRuntime).getByRole('link', { name: 'Quickstart docs' })).toHaveAttribute(
+      'href',
+      'https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart',
+    )
+    expect(within(advancedRuntime).getByRole('link', { name: 'Runtime adapter notes' })).toHaveAttribute(
+      'href',
+      'https://knowledge-bridge-labs.github.io/llmwiki-docs/runtime-adapters',
+    )
+    expect(within(advancedRuntime).getByRole('link', { name: 'Agent Bridge README' })).toHaveAttribute(
+      'href',
+      'https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge#readme',
+    )
+    expect(within(advancedRuntime).getByRole('button', { name: 'Test local bridge' })).toBeInTheDocument()
+    expect(within(advancedRuntime).getByText(/llmwiki-agent-bridge@0\.1\.0/)).toBeInTheDocument()
 
     fetchMock.mockClear()
-    await user.click(within(quickstart).getByRole('button', { name: 'Test local bridge' }))
+    await user.click(within(advancedRuntime).getByRole('button', { name: 'Test local bridge' }))
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes('http://127.0.0.1:8788/.well-known/agent-card.json'))).toBe(true)
     })
     expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+    expect(within(advancedRuntime).getByText(/No bridge or LLM endpoint\? Skip this/)).toBeInTheDocument()
+    expect(within(runtimeStep).getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
+    await user.click(within(runtimeStep).getByRole('button', { name: 'Use Local Development Runtime' }))
+    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+
+    await user.click(within(advancedRuntime).getByRole('button', { name: 'Skip and close' }))
+    expect(screen.queryByRole('region', { name: 'Quickstart' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show Quickstart' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('auto-collapses ready sidebar sections and allows manual expansion for editing', async () => {
@@ -565,7 +642,8 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
-    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).not.toBeChecked()
 
     const runtimeCard = await addRuntime(user, 'Custom A2A')
 
@@ -642,6 +720,7 @@ describe('LLMWiki Chat', () => {
   })
 
   it('shows Agent Bridge registered sources in Knowledge Sources without persisting them as direct sources', async () => {
+    writeSelectedLocalBridgeAgent()
     const fetchMock = stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8788/mcp') {
         const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
@@ -691,6 +770,7 @@ describe('LLMWiki Chat', () => {
   })
 
   it('uses a bridge-managed source when it duplicates an unavailable default direct endpoint', async () => {
+    writeSelectedLocalBridgeAgent()
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8765/manifest') {
         return new Response('not found', { status: 404 })
@@ -744,6 +824,7 @@ describe('LLMWiki Chat', () => {
 
   it('drops bridge-managed source selection after users edit a direct source for a custom runtime', async () => {
     const user = userEvent.setup()
+    writeSelectedLocalBridgeAgent()
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8788/mcp') {
         const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
@@ -811,6 +892,7 @@ describe('LLMWiki Chat', () => {
 
   it('keeps a bridge run alive through no-op source selection and duplicate discovery refreshes', async () => {
     const user = userEvent.setup()
+    writeSelectedLocalBridgeAgent()
     const messageSend = deferredResponse()
     let messageSendCalls = 0
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
@@ -879,6 +961,7 @@ describe('LLMWiki Chat', () => {
 
   it('keeps the ready Knowledge Sources section open while users change selected sources', async () => {
     const user = userEvent.setup()
+    writeSelectedLocalBridgeAgent()
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8788/mcp') {
         const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
@@ -945,6 +1028,7 @@ describe('LLMWiki Chat', () => {
 
   it('deduplicates Agent Bridge sources by endpoint when switching A2A and MCP bridge runtimes', async () => {
     const user = userEvent.setup()
+    writeSelectedLocalBridgeAgent()
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8788/mcp') {
         const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
@@ -1120,6 +1204,7 @@ describe('LLMWiki Chat', () => {
 
   it('keeps bridge bearer tokens in tab state only', async () => {
     const user = userEvent.setup()
+    writeSelectedLocalBridgeAgent()
     const authHeaders: Array<string | null> = []
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8788/.well-known/agent-card.json') {
@@ -1158,7 +1243,7 @@ describe('LLMWiki Chat', () => {
     })
   })
 
-  it('restores a selected Custom A2A config without overwriting it with the default bridge', async () => {
+  it('restores a selected Custom A2A config without overwriting it with the default runtime', async () => {
     stubA2aRuntimeDiscovery()
     writeStoredAgents([
       {
@@ -1567,7 +1652,7 @@ describe('LLMWiki Chat', () => {
     expect(await within(reloadedRuntimeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
   })
 
-  it('clears external runtime config and returns selection to the default bridge', async () => {
+  it('clears external runtime config and returns selection to the default local development runtime', async () => {
     const user = userEvent.setup()
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
@@ -1580,7 +1665,8 @@ describe('LLMWiki Chat', () => {
 
     await user.click(within(runtimeCard as HTMLElement).getByRole('button', { name: 'Remove runtime' }))
 
-    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).not.toBeChecked()
     expect(screen.queryByRole('radio', { name: /Custom A2A/ })).not.toBeInTheDocument()
     await waitFor(() => {
       const storedCustomRuntime = readStoredAgents().agents.find((agent) => agent.id === 'custom-a2a')

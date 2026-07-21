@@ -70,13 +70,13 @@ function requestHeader(init: RequestInit | undefined, name: string): string | nu
 }
 
 describe('starterAgentConnections', () => {
-  it('selects Local Agent Bridge A2A by default and demotes the local development runtime', () => {
+  it('selects Local Development Runtime by default and keeps local bridge available', () => {
     expect(starterAgentConnections[0]).toMatchObject({
       id: 'bridge-a2a',
       name: 'Local Agent Bridge (A2A)',
       protocol: 'bridge-a2a',
       url: 'http://127.0.0.1:8788',
-      selected: true,
+      selected: false,
       status: 'unknown',
     })
     expect(starterAgentConnections.find((agent) => agent.id === 'bridge-mcp')).toMatchObject({
@@ -88,7 +88,7 @@ describe('starterAgentConnections', () => {
     expect(starterAgentConnections.find((agent) => agent.id === 'mock-agent')).toMatchObject({
       name: 'Local Development Runtime',
       protocol: 'mock-agent',
-      selected: false,
+      selected: true,
       status: 'ready',
     })
   })

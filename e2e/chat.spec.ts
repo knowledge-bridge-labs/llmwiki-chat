@@ -390,20 +390,115 @@ test('disables suggested prompts with the same inline reason for an unavailable 
 })
 
 test('shows browser-safe quickstart commands and reuses source checks', async ({ page }) => {
+  let sourceAvailable = false
+  const corsHeaders = {
+    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Origin': '*',
+  }
+  await page.unroute('http://127.0.0.1:8765/manifest')
+  await page.route('http://127.0.0.1:8765/manifest', async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders })
+      return
+    }
+    if (!sourceAvailable) {
+      await route.fulfill({ status: 404, headers: corsHeaders, body: 'source missing' })
+      return
+    }
+    await route.fulfill({
+      headers: corsHeaders,
+      json: {
+        title: 'Sample Packaging LLMWiki',
+        description: 'Synthetic packaging operations knowledge base.',
+        adapter: 'llmwiki-markdown',
+        implementation: 'atomicstrata/llm-wiki-compiler',
+        page_count: 4,
+        approved_page_count: 4,
+      },
+    })
+  })
+  await page.route('http://127.0.0.1:8788/.well-known/agent-card.json', async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders })
+      return
+    }
+    await route.fulfill({ status: 404, headers: corsHeaders, body: 'bridge missing' })
+  })
+  await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/')
+
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
+  const quickstartToggle = page.getByRole('button', { name: 'Show Quickstart' })
+  await expect(quickstartToggle).toHaveAttribute('aria-expanded', 'false')
+  await quickstartToggle.click()
+  await expect(page.getByRole('button', { name: 'Hide Quickstart' })).toHaveAttribute('aria-expanded', 'true')
 
   const quickstart = page.getByRole('region', { name: 'Quickstart' })
   await expect(quickstart).toBeVisible()
+  await expect(quickstart).toBeFocused()
   await expect(quickstart.getByRole('heading', {
-    name: 'Start services in a shell, then verify them here.',
+    name: 'Step 1: connect llmwiki-serve.',
   })).toBeVisible()
   await expect(quickstart).toContainText('cannot install packages, start local processes')
+  await expect(quickstart).toContainText('For a first pass, you only need llmwiki-serve')
+  const sourceStep = quickstart.getByRole('region', { name: 'Step 1 source setup' })
+  await expect(sourceStep).toBeVisible()
+  await expect(sourceStep.getByRole('button', { name: 'Test sample source' })).toBeVisible()
+  await expect(sourceStep).toContainText('If this check fails or stays unknown')
+  await expect(quickstart.getByRole('region', { name: 'Step 2 runtime choice' })).toHaveCount(0)
+  await expect(quickstart.getByRole('button', { name: 'Test local bridge' })).toHaveCount(0)
+  await expect(quickstart).not.toContainText('Hermes')
+  await expect(quickstart).not.toContainText('DeepAgents')
+  await expect(quickstart).not.toContainText('llmwiki-agent-bridge@0.1.0')
   await expect(quickstart).toContainText('llmwiki-serve==0.2.0')
-  await expect(quickstart).toContainText('llmwiki-agent-bridge@0.1.0')
   await expect(quickstart).toContainText('/path/to/wiki')
 
-  await quickstart.getByRole('button', { name: 'Test sample source' }).click()
+  sourceAvailable = true
+  await sourceStep.getByRole('button', { name: 'Test sample source' }).click()
   await expect(page.getByRole('article').filter({ hasText: 'Sample Packaging LLMWiki' }).getByLabel('Connection status ready')).toBeVisible()
+  const runtimeStep = quickstart.getByRole('region', { name: 'Step 2 runtime choice' })
+  await expect(runtimeStep).toBeVisible()
+  await expect(runtimeStep).toContainText('Default: use Local Development Runtime')
+  await expect(runtimeStep).toContainText('Serve-only path is ready')
+  await expect(runtimeStep.getByRole('button', { name: 'Continue serve-only' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+  await expect(runtimeStep.getByRole('button', { name: 'Show optional bridge/runtime steps' })).toHaveAttribute('aria-expanded', 'false')
+  await expect(runtimeStep.getByRole('button', { name: 'Test local bridge' })).toHaveCount(0)
+  await expect(runtimeStep).not.toContainText('Hermes')
+  await expect(runtimeStep).not.toContainText('DeepAgents')
+
+  await runtimeStep.getByRole('button', { name: 'Show optional bridge/runtime steps' }).click()
+  const advancedRuntime = runtimeStep.getByRole('region', { name: 'Optional bridge runtime steps' })
+  await expect(advancedRuntime).toBeVisible()
+  await expect(advancedRuntime).toContainText('No bridge or LLM endpoint? Skip this')
+  await expect(advancedRuntime).toContainText('Hermes, DeepAgents, or OpenAI-compatible runtimes')
+  await expect(advancedRuntime.getByRole('link', { name: 'Quickstart docs' })).toHaveAttribute(
+    'href',
+    'https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart',
+  )
+  await expect(advancedRuntime.getByRole('link', { name: 'Runtime adapter notes' })).toHaveAttribute(
+    'href',
+    'https://knowledge-bridge-labs.github.io/llmwiki-docs/runtime-adapters',
+  )
+  await expect(advancedRuntime.getByRole('link', { name: 'Agent Bridge README' })).toHaveAttribute(
+    'href',
+    'https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge#readme',
+  )
+  await expect(advancedRuntime.getByRole('button', { name: 'Test local bridge' })).toBeVisible()
+  await advancedRuntime.getByRole('button', { name: 'Test local bridge' }).click()
+  await expect(page.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).toBeChecked()
+  await expect(advancedRuntime).toContainText('No bridge or LLM endpoint? Skip this')
+  await expect(runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' })).toBeEnabled()
+  await runtimeStep.getByRole('button', { name: 'Use Local Development Runtime' }).click()
+  await expect(page.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
+  await expectQuickstartStatusInsidePanel(page)
+
+  await page.setViewportSize({ width: 500, height: 720 })
+  await expectQuickstartStatusInsidePanel(page)
+  await advancedRuntime.getByRole('button', { name: 'Skip and close' }).click()
+  await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
 })
 
 test('labels suggested prompts as ask actions and clears the composer when they run', async ({ page }) => {
@@ -1136,6 +1231,26 @@ async function openSidebarSection(section: Locator): Promise<void> {
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   }
+}
+
+async function expectQuickstartStatusInsidePanel(page: Page): Promise<void> {
+  const outsideElements = await page.locator('.quickstart-panel').evaluate((panel) => {
+    const panelBox = panel.getBoundingClientRect()
+    return Array.from(panel.querySelectorAll('.quickstart-status dt, .quickstart-status dd, .quickstart-status dd > span'))
+      .map((element) => {
+        const box = element.getBoundingClientRect()
+        return {
+          text: element.textContent?.trim() || element.tagName.toLowerCase(),
+          left: box.left,
+          right: box.right,
+          panelLeft: panelBox.left,
+          panelRight: panelBox.right,
+        }
+      })
+      .filter((box) => box.left < panelBox.left - 1 || box.right > panelBox.right + 1)
+  })
+
+  expect(outsideElements).toEqual([])
 }
 
 async function expectDetailsInsideInspectorViewport(page: Page): Promise<void> {

@@ -78,28 +78,33 @@ npm run dev
 
 Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 
-1. Start with the Quickstart panel in the empty chat state. The panel shows
-   copyable shell commands for `llmwiki-serve` and `llmwiki-agent-bridge` and
-   makes the browser/process boundary explicit.
-2. Use the prefilled `Local sample LLMWiki` source first. Confirm its URL is
-   `http://127.0.0.1:8765`, then click `Test sample source` or `Test source`.
-3. A ready source loads page, graph, and citation context into the Knowledge
+1. The empty chat state stays focused on the selected source and suggested
+   prompts. Open `Show Quickstart` only if you want guided setup help.
+2. Quickstart Step 1 starts with `llmwiki-serve` only. Use the prefilled
+   `Local sample LLMWiki` source first. Confirm its URL is
+   `http://127.0.0.1:8765`, then click `Test sample source`.
+3. If the source check fails, open `Show llmwiki-serve commands`, start the
+   source in a trusted shell, and test again. You can close Quickstart any time
+   and configure Knowledge Sources manually.
+4. A ready source loads page, graph, and citation context into the Knowledge
    map, Pages, and Details panels.
-4. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
+5. With only `llmwiki-serve`, choose `Continue serve-only`. The default Local
+   Development Runtime needs no external LLM endpoint, Hermes Agent,
+   DeepAgents install, or bridge. It is for deterministic UI, trace, citation,
+   and graph rendering checks, not answer-quality validation.
+6. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
    `MCP`, enter the endpoint URL, and click `Add`.
-5. Prefer the default Local Agent Bridge A2A or MCP path when
-   `llmwiki-agent-bridge` is running at `http://127.0.0.1:8788`; confirm the
-   bridge URL and click `Test bridge`.
-6. When the bridge is ready, chat discovers the bridge's registered Knowledge
+7. Expand `Show optional bridge/runtime steps` only when you want
+   `llmwiki-agent-bridge`, Hermes, DeepAgents, or an OpenAI-compatible runtime.
+   If no bridge or LLM endpoint is available, skip this section and continue
+   serve-only.
+8. When the bridge is ready, chat discovers the bridge's registered Knowledge
    Sources and shows them as bridge-managed, read-only source cards. Edit those
    sources in the bridge settings page. Keep direct source cards in chat for
    standalone `llmwiki-serve` testing and debugging.
-7. If no bridge is running, switch to `Local Development Runtime` under
-   testing/developer runtime options for deterministic UI, trace, citation, and
-   graph rendering checks. It is not an answer-quality runtime.
-8. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
+9. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
-9. Review the answer, citations, artifacts, and trace before treating the result
+10. Review the answer, citations, artifacts, and trace before treating the result
    as useful.
 
 The Vite command starts only the browser client. It does not start
@@ -146,9 +151,9 @@ current posture.
 
 ## Demo
 
-![LLMWiki Chat browser-safe first-run Quickstart panel](docs/assets/llmwiki-chat-workbench.png)
+![LLMWiki Chat source-first Quickstart flow](docs/assets/llmwiki-chat-workbench.png)
 
-The screenshot shows the current browser-safe first-run Quickstart panel with
+The screenshot shows the current opt-in, source-first Quickstart flow with
 sanitized loopback sample values. It does not show a connected production
 runtime, private Knowledge Source, or managed backend automation.
 

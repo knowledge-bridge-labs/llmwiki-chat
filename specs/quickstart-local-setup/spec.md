@@ -9,15 +9,21 @@ browser can verify and what must run in a trusted local shell.
 
 ## Goals
 
-- Add one visible quickstart entry point in the empty chat state.
-- Detect and display current sample source and local bridge readiness from
-  existing connection state.
-- Provide copyable commands for starting `llmwiki-serve` and
-  `llmwiki-agent-bridge`.
+- Add one visible, opt-in quickstart entry point in the empty chat state.
+- Keep the default first-run screen focused on chat/source readiness rather than
+  showing a full setup checklist immediately.
+- Present the quickstart as a progressive source-first flow:
+  1. connect/test `llmwiki-serve`,
+  2. continue with Local Development Runtime / serve-only inspection,
+  3. optionally expand bridge/runtime setup.
+- Detect and display current sample source readiness from existing connection
+  state before showing runtime/bridge choices.
+- Provide copyable commands for starting `llmwiki-serve`; keep
+  `llmwiki-agent-bridge` commands inside optional advanced runtime setup.
 - Reuse existing source and runtime test buttons instead of introducing an
   unsafe browser process launcher.
-- Keep Hermes and DeepAgents as explicit runtime choices after the bridge/source
-  path is understood.
+- Keep `llmwiki-agent-bridge`, Hermes, and DeepAgents as optional advanced
+  runtime choices after the source/serve-only path is understood.
 - Preserve the Local Development Runtime as the deterministic fallback for UI
   and graph/citation checks.
 
@@ -31,14 +37,25 @@ browser can verify and what must run in a trusted local shell.
 
 ## Requirements
 
+- The quickstart panel must not render by default on an empty first-run screen;
+  the user must explicitly open it.
 - The quickstart panel must state that the browser cannot start local services.
-- It must expose commands for:
-  - serving a local wiki with `llmwiki-serve`,
-  - starting `llmwiki-agent-bridge`.
+- Step 1 must focus only on serving/testing a `llmwiki-serve` Knowledge Source.
+- If Step 1 is not ready, the UI must explain how to start/retry
+  `llmwiki-serve` and how to close Quickstart without being blocked.
+- Step 2 must appear only after a source is ready.
+- Step 2 must make the serve-only / Local Development Runtime path the default
+  path and state that no LLM endpoint, Hermes Agent, DeepAgents install, or
+  bridge is required for basic source/evidence inspection.
+- Bridge, Hermes, DeepAgents, and generic OpenAI-compatible runtime guidance
+  must be hidden behind an optional advanced disclosure.
+- Advanced runtime guidance must include next actions for a missing bridge:
+  install/start `llmwiki-agent-bridge`, read docs, or skip/continue serve-only.
+- It must expose commands for serving a local wiki with `llmwiki-serve`.
 - It must provide actions to:
   - restore and test the default sample source,
-  - select and test the local bridge,
-  - switch to Local Development Runtime for deterministic UI checks.
+  - continue/finish Quickstart with Local Development Runtime,
+  - optionally select and test the local bridge from the advanced section.
 - It must not store secrets or local absolute paths.
 - It must remain accessible from keyboard and screen-reader flows.
 
