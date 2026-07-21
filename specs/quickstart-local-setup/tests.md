@@ -86,6 +86,54 @@
 - README/docs/screenshots match the implemented progressive disclosure state and
   avoid showing private paths, raw logs, tokens, or private endpoint values.
 
+## Loop 4 operational evidence acceptance
+
+- Isolated cold-start no-services e2e starts from a clean browser context with
+  no running `llmwiki-serve`, no running `llmwiki-agent-bridge`, no external LLM
+  endpoint, and no persisted localStorage/runtime/source state.
+- App-only/no-services state keeps the default first screen source-first and
+  calm: Quickstart is opt-in, Graph/Pages/Details are hidden before inspect,
+  add-runtime controls and raw Local I/O details are collapsed, and the browser
+  does not claim it can start local processes.
+- Missing `llmwiki-serve` state shows start/retry guidance, copyable commands,
+  close/dismiss recovery, and no blocking runtime/bridge prerequisite.
+- Serve-only-ready state with a live `llmwiki-serve` source allows Local
+  Development Runtime asking, citation/detail inspection, and setup exit without
+  bridge, Hermes, DeepAgents, external LLM credentials, or source contract
+  changes.
+- Bridge-absent state is reachable only through optional advanced runtime
+  disclosure and explains start/restart, confirm `http://127.0.0.1:8788`, or
+  skip/continue serve-only.
+- Accidental unready advanced runtime selection explains the inline readiness
+  problem, disables or guards suggested prompts consistently, and leaves a
+  visible path back to Local Development Runtime.
+- Local I/O opt-out and clear states remain accessible and safe while raw/debug
+  logs stay less prominent than source readiness, first asking, and inspect
+  affordances in the default first viewport.
+- Citation/detail unavailable state shows a quiet non-blocking notice or
+  recovery action and does not trap focus or leave the progressive inspector in
+  a broken state.
+- Live serve e2e validates the same progressive inspector behavior against real
+  `llmwiki-serve` responses: explicit inspect reveal, citation auto-reveal to
+  Details, page/graph detail updates after inspector open, and source
+  namespacing for live evidence.
+- Loop 4 is not complete until the cold-start no-services e2e, live serve e2e,
+  and full `npm run check` commands select the intended tests and pass.
+- Loop 4 validation evidence:
+  - `npx playwright test e2e/chat.spec.ts --grep "cold-start no-services"`:
+    4 passed, covering desktop/mobile calm first screen and desktop/mobile
+    advanced-runtime accident recovery back to serve-only.
+  - `LLMWIKI_LIVE_SERVE_SKIP_SYNC=1 npm run test:e2e:live`: 8 passed after the
+    runner started two local `llmwiki-serve` sample sources and exercised
+    desktop/mobile HTTP, MCP, multi-source evidence namespacing, and citation
+    auto-reveal from a hidden inspector. The skip-sync form was used only
+    because the local Windows sibling serve virtualenv was already synced and
+    executable-locked by development runs.
+  - `npm run check`: passed after Loop 4 code/docs changes, including lint,
+    typecheck, 206 Vitest tests, 50 non-skipped Playwright tests, production
+    build, dry-run pack, license check, and `npm audit --audit-level=moderate`
+    with 0 vulnerabilities.
+
 ## Commands
 
 ```sh
@@ -97,17 +145,38 @@ npm run test:e2e:sample-matrix
 npm run test:e2e:sample-matrix:bridge
 ```
 
+For Loop 4 operational first-user evidence:
+
+```sh
+npx playwright test e2e/chat.spec.ts --grep "cold-start no-services"
+npm run test:e2e:live
+```
+
+For local Windows reruns where a sibling `llmwiki-serve` virtualenv is already
+synced and an active process locks the generated executable, use:
+
+```sh
+LLMWIKI_LIVE_SERVE_SKIP_SYNC=1 npm run test:e2e:live
+```
+
+The release gate remains `npm run test:e2e:live` in a clean environment; the
+skip-sync form only avoids re-syncing a locked local development virtualenv.
+
 For documentation-only changes in `llmwiki-docs`:
 
 ```sh
 npm run check
 ```
 
-For this Loop 3 docs/rubric worker pass:
+For this Loop 4 docs/rubric worker pass:
 
 ```sh
+git diff --check -- specs/quickstart-local-setup/spec.md specs/quickstart-local-setup/plan.md specs/quickstart-local-setup/tasks.md specs/quickstart-local-setup/tests.md specs/quickstart-local-setup/rubric.md
 git diff -- specs/quickstart-local-setup/spec.md specs/quickstart-local-setup/plan.md specs/quickstart-local-setup/tasks.md specs/quickstart-local-setup/tests.md specs/quickstart-local-setup/rubric.md
 ```
 
 Loop 3 implementation validation uses focused unit and Playwright commands for
 the acceptance bullets above before re-running the full release gate.
+
+Loop 4 implementation validation must add the cold-start no-services and live
+serve commands above before promoting the first-time path as production-default.

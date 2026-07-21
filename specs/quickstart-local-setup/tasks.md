@@ -69,3 +69,36 @@
 - [x] Refresh README/docs/screenshots after implementation lands and verify they
       do not expose private paths, tokens, raw logs, or endpoint secrets.
 - [x] Run Loop 3 full `npm run check` release gate after focused validation.
+
+## Loop 4
+
+- [x] Add a first-user operational state matrix for app-only/no services,
+      missing serve, serve-only ready, bridge absent, accidental unready
+      advanced runtime selection, Local I/O opt-out/clear, unavailable
+      citation/detail evidence, and live serve.
+- [x] Update the rubric with a numeric Loop 4 operational readiness gate that
+      preserves the Loop 3 progressive disclosure score as 99/100 but requires
+      additional operational evidence before production-default first-time
+      approval.
+- [x] Add acceptance commands for the cold-start no-services e2e and live serve
+      e2e.
+- [x] Land or confirm the isolated cold-start no-services e2e evidence.
+- [x] Run and record the cold-start no-services e2e command:
+      `npx playwright test e2e/chat.spec.ts --grep "cold-start no-services"`
+      (4 passed).
+- [x] Align live serve e2e with the progressive inspector model and stable
+      source display-name behavior.
+- [x] Harden `scripts/run-live-serve-e2e.mjs` to start the synced
+      `llmwiki-serve` executable directly and pass explicit local CORS origins.
+- [x] Run and record the live serve e2e command:
+      `LLMWIKI_LIVE_SERVE_SKIP_SYNC=1 npm run test:e2e:live` (8 passed in the
+      local Windows dev run; clean release gate remains `npm run test:e2e:live`).
+- [x] Add live citation auto-reveal coverage from a hidden inspector and
+      cold-start advanced-runtime accident recovery coverage.
+- [x] Run and record the full Loop 4 release gate:
+      `npm run check` (passed).
+- [x] Score Loop 4 operational readiness only after the cold-start, live serve,
+      and full release-gate commands select the intended tests where applicable
+      and pass.
+- [x] Mark Loop 4 complete only after the operational evidence is present and
+      the rubric score meets the Loop 4 gate.

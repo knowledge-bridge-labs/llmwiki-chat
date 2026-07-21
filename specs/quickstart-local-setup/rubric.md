@@ -1,7 +1,7 @@
 # First-Time User Quickstart Rubric
 
 Date: 2026-07-21
-Status: loop-3 validated
+Status: loop-4 validated
 
 This rubric scores whether `llmwiki-chat` gives a first-time user a clear,
 non-blocking path from opening the app to a useful first source/evidence
@@ -12,6 +12,12 @@ progressive disclosure model. Loop 1 and Loop 2 history below remains
 unchanged; Loop 3 scores are based on code, focused unit/e2e validation,
 screenshot review, and safety review evidence.
 
+Loop 4 adds an operational readiness gate. It does not lower or replace the
+Loop 3 progressive disclosure result: Loop 3 remains scored at 99/100. Overall
+production-default first-time approval also requires Loop 4 evidence from an
+isolated cold-start no-services e2e, live `llmwiki-serve` e2e aligned with the
+progressive inspector, and the full release gate; all gates now pass.
+
 The target for production-default approval is:
 
 - total score >= 90 / 100,
@@ -19,6 +25,20 @@ The target for production-default approval is:
 - `npm run check` passes,
 - no required path depends on a real LLM endpoint, Hermes Agent, DeepAgents, or
   `llmwiki-agent-bridge`.
+
+Starting in Loop 4, the production-default first-time approval target also
+requires:
+
+- Loop 3 progressive disclosure remains at 99/100 or better-supported by newer
+  evidence,
+- Loop 4 operational readiness score >= 90 / 100,
+- `npx playwright test e2e/chat.spec.ts --grep "cold-start no-services"` passes
+  against an isolated no-services state,
+- `npm run test:e2e:live` passes against started or provided live
+  `llmwiki-serve` source(s),
+- `npm run check` passes after the Loop 4 changes,
+- Loop 4 scores stay pending if any required evidence command has not landed,
+  does not select the intended tests, or has not passed.
 
 ## Loop 1/2 rubric
 
@@ -97,6 +117,38 @@ evidence.
 | L3-R10 | 8 | 8 | Browser/process boundary and Local I/O contracts remain unchanged; token redaction/localStorage tests pass; full no-credential `npm run check` passes, including pack dry-run and audit. | None. |
 | Total | 100 | 99 | Meets the Loop 3 production-default score threshold with full release-gate validation. | Manual fresh-user/screen-reader observation remains useful follow-up evidence, but is not required for this automated gate. |
 
+## Loop 4 operational readiness rubric
+
+Loop 4 is scored separately from Loop 3. The Loop 3 UI progressive disclosure
+score remains 99/100, but the overall first-time production-default approval is
+pending until the operational evidence below lands and passes.
+
+| ID | Criterion | Weight | Evidence method |
+|---|---:|---:|---|
+| L4-R1 | App-only / no-services cold start: clean browser context, no local services, no persisted source/runtime state, source-first default viewport, no full checklist, no Graph/Pages/Details before inspect, no process-start claim. | 14 | `npx playwright test e2e/chat.spec.ts --grep "cold-start no-services"` with service endpoints isolated or mocked absent. |
+| L4-R2 | Missing `llmwiki-serve` recovery: source readiness and Quickstart Step 1 explain start/retry, copyable commands, close/dismiss, and no runtime/bridge prerequisite. | 12 | Cold-start no-services e2e assertions for missing source recovery and no horizontal overflow. |
+| L4-R3 | Serve-only ready path: live `llmwiki-serve` plus Local Development Runtime supports deterministic asking, citations, graph/page/details inspection, and setup exit. | 16 | `npm run test:e2e:live` verifies live source discovery, ask, citations, Details, and inspector reveal without bridge or external LLM credentials. |
+| L4-R4 | Bridge absent remains optional: failed bridge checks are only in optional advanced disclosure and explain start/restart, confirm `http://127.0.0.1:8788`, or skip/continue serve-only. | 10 | Cold-start no-services e2e or focused bridge-absent e2e covers optional recovery copy and serve-only continuity. |
+| L4-R5 | Accidental unready advanced runtime selection: Hermes, DeepAgents, Custom A2A, or OpenAI-compatible runtime choices fail safely, explain readiness inline, and offer a path back to Local Development Runtime. | 10 | Cold-start no-services e2e covers unready advanced runtime selection without credentials or a bridge. |
+| L4-R6 | Local I/O opt-out / clear readiness: default-on logging remains redacted and bounded; opt-out, clear, copy/export are accessible; raw/debug logs do not dominate the first viewport. | 10 | Cold-start no-services e2e plus code review for redaction, storage boundaries, and no private path/secret exposure. |
+| L4-R7 | Citation/detail unavailable recovery: unavailable evidence shows quiet non-blocking recovery, keeps focus safe, and does not leave the progressive inspector broken. | 12 | Cold-start no-services or mocked e2e covers unavailable detail evidence, dismissal/retry, and focus behavior. |
+| L4-R8 | Live serve progressive inspector: live evidence follows the same inspector model as sample fixtures, including explicit inspect reveal, citation auto-reveal to Details, page/graph detail updates, and source namespacing. | 16 | `npm run test:e2e:live` validates live HTTP/MCP source behavior and multi-source citation namespacing where available. |
+| Total | | 100 | |
+
+## Loop 4 score
+
+| ID | Weight | Score | Current evidence | Gap / next improvement |
+|---|---:|---|---|---|
+| L4-R1 | 14 | 14 | `npx playwright test e2e/chat.spec.ts --grep "cold-start no-services"` passes desktop/mobile and starts from isolated storage plus unavailable local endpoints. | None. |
+| L4-R2 | 12 | 12 | Cold-start e2e verifies missing `llmwiki-serve` recovery, command disclosure, 500px no-overflow, retry, and close/dismiss without runtime/bridge prerequisites. | None. |
+| L4-R3 | 16 | 16 | `LLMWIKI_LIVE_SERVE_SKIP_SYNC=1 npm run test:e2e:live` passes desktop/mobile HTTP and MCP live source ask/citation/inspector paths without bridge or external LLM credentials in this Windows dev run; clean release gate remains `npm run test:e2e:live`. | None. |
+| L4-R4 | 10 | 10 | Focused quickstart tests cover bridge 404 only inside optional advanced disclosure and preserve skip/continue serve-only recovery. | None. |
+| L4-R5 | 10 | 10 | `cold-start no-services advanced runtime accident recovers to serve-only` passes desktop/mobile and verifies unready Hermes selection disables ask actions, shows inline readiness guidance, and recovers to Local Development Runtime. Focused unit/e2e tests also cover Hermes/custom runtime readiness behavior. | None. |
+| L4-R6 | 10 | 10 | Cold-start e2e verifies default-on logging and hidden raw log actions; Local I/O unit tests verify opt-out, clear, export/copy reachability, redaction, and storage boundaries. | None. |
+| L4-R7 | 12 | 12 | Mocked tests cover quiet unavailable evidence notices, citation/detail recovery, and progressive inspector stability. | None. |
+| L4-R8 | 16 | 16 | `LLMWIKI_LIVE_SERVE_SKIP_SYNC=1 npm run test:e2e:live` passes desktop/mobile live HTTP, live MCP, multi-source source namespacing, explicit inspector reveal, citation auto-reveal from hidden inspector, and citation detail review in this Windows dev run; clean release gate remains `npm run test:e2e:live`. | None. |
+| Total | 100 | 100 | Meets Loop 4 operational readiness threshold with cold-start, live serve, and full `npm run check` gates passing. | Manual screen-reader observation remains useful follow-up evidence, but it does not block the automated gate. |
+
 ## Loop notes
 
 - The first successful user path is now `Show Quickstart` -> `Test sample source`
@@ -112,3 +164,7 @@ evidence.
   experience: calm default viewport, staged source/runtime expansions,
   progressive inspector/right rail, optional advanced runtimes, and safer
   less-debug-forward Local I/O visibility.
+- Loop 4 changes the approval question from "is the UI progressively disclosed?"
+  to "does a first user have operational evidence across cold app, missing
+  services, serve-only ready, optional runtime failure, Local I/O, unavailable
+  details, and live serve states?" The automated Loop 4 gate now passes.

@@ -49,6 +49,23 @@
     export, and recovery affordances.
 18. Loop 3: update focused tests, docs, and screenshots after implementation
     lands; score Loop 3 only from code, test, screenshot, and safety evidence.
+19. Loop 4: document first-user operational evidence states rather than adding a
+    new UI polish checklist.
+20. Loop 4: require an isolated cold-start no-services e2e that covers app-only,
+    missing serve, bridge-absent, accidental unready advanced runtime, Local I/O,
+    and unavailable citation/detail recovery states.
+21. Loop 4: require live `llmwiki-serve` validation that exercises the
+    serve-only path through asking, citations, and the progressive inspector.
+22. Loop 4: keep the overall production-default first-time approval pending
+    until cold-start, live serve, and full `npm run check` evidence all land and
+    pass.
+23. Loop 4: avoid a new ADR unless the evidence changes a public contract,
+    source/runtime boundary, Local I/O policy, or browser/process security
+    posture.
+24. Loop 4: harden the live serve e2e runner so local validation starts the
+    synced `llmwiki-serve` executable directly, passes explicit local CORS
+    origins for the Vite app, and avoids `uv run` executable-lock failures on
+    active Windows development environments.
 
 ## Affected files
 
@@ -78,6 +95,20 @@ Loop 3 implementation surfaces:
 - `specs/quickstart-local-setup/tests.md`
 - `specs/quickstart-local-setup/rubric.md`
 
+Loop 4 docs/rubric worker surfaces:
+
+- `specs/quickstart-local-setup/spec.md`
+- `specs/quickstart-local-setup/plan.md`
+- `specs/quickstart-local-setup/tasks.md`
+- `specs/quickstart-local-setup/tests.md`
+- `specs/quickstart-local-setup/rubric.md`
+
+Loop 4 implementation surfaces:
+
+- `e2e/chat.spec.ts`
+- `e2e/live-serve.spec.ts`
+- `scripts/run-live-serve-e2e.mjs`
+
 ## Risks
 
 - The panel must not imply that the static browser app can install packages or
@@ -102,3 +133,15 @@ Loop 3 implementation surfaces:
   logs, private paths, tokens, and private endpoint values out of public assets.
 - No new ADR is expected for Loop 3 if the work stays presentation-only and
   preserves the existing browser quickstart and Local I/O logging boundaries.
+- Loop 4 scoring must not get ahead of evidence: score only after the
+  cold-start no-services e2e, live serve e2e, and full `npm run check` all
+  select real tests where applicable and pass.
+- The cold-start run must be isolated from developer machines so existing
+  services, localStorage, cookies, or bridge/runtime endpoints do not mask
+  first-user failures.
+- Live serve validation should prove the same progressive inspector behavior
+  against real `llmwiki-serve` responses, including citation auto-reveal from a
+  hidden inspector, not only mocked sample fixtures.
+- No new ADR is expected for Loop 4 unless the operational evidence forces a
+  contract, source/runtime boundary, persistence, logging, or browser/process
+  security policy change.

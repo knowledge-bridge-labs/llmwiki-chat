@@ -15,6 +15,12 @@ path. Deeper inspection and runtime configuration remain available, but they
 should be revealed only after an explicit inspect, citation, source, runtime, or
 logging action.
 
+Loop 4 treats the first screen as an operational first-user path, not another UI
+polish pass. The release question is whether a cold browser app and a live
+`llmwiki-serve` source both produce clear, recoverable evidence across expected
+first-time states before the chat is approved as a production-default entry
+point.
+
 ## Goals
 
 - Add one visible, opt-in quickstart entry point in the empty chat state.
@@ -52,6 +58,9 @@ logging action.
 - Loop 3: keep Local I/O logging default-on and safe, while making raw/debug log
   controls less prominent in the first viewport and still easy to find, disable,
   clear, copy, or export when needed.
+- Loop 4: validate first-time operational states with isolated no-services
+  cold-start evidence and live `llmwiki-serve` evidence aligned with the
+  progressive inspector model.
 
 ## Non-goals
 
@@ -64,6 +73,9 @@ logging action.
   I/O logging; it changes when first-time users encounter those surfaces.
 - Loop 3 does not change source, runtime, citation, trace, logging, storage, or
   network contracts.
+- Loop 4 is not a new UI polish loop and does not introduce new service
+  supervision, installer automation, runtime contracts, source contracts, or
+  security policy changes.
 
 ## Requirements
 
@@ -137,8 +149,27 @@ logging action.
 - README/docs/screenshots must match the implemented first-screen disclosure
   model and avoid showing private paths, tokens, raw logs, or endpoint secrets.
 
+### Loop 4 first-user operational evidence
+
+Loop 4 acceptance is based on observable first-user states. It is scored only
+from isolated cold-start no-services evidence, focused failure/recovery tests,
+and live `llmwiki-serve` evidence.
+
+| First-user state | Expected behavior | Required evidence |
+|---|---|---|
+| App-only / no services | The browser app loads without local services, keeps Quickstart opt-in, prioritizes source readiness and asking, and does not imply that the browser can start processes. | Cold-start no-services e2e asserts the default screen, source-first copy, no full checklist, no visible Graph/Pages/Details panels, and no bridge/runtime prerequisite. |
+| `llmwiki-serve` missing | Source readiness and Quickstart Step 1 explain how to start/retry `llmwiki-serve`; Step 2 and runtime/bridge choices do not become prerequisites; the user can close setup without being trapped. | Cold-start no-services e2e mocks or verifies missing source recovery, retry, close/dismiss, and no horizontal overflow. |
+| Serve-only ready | With only `llmwiki-serve` ready, Local Development Runtime remains sufficient for deterministic asking, citation review, graph/page/detail inspection, and setup exit. | Live serve e2e validates source discovery, deterministic ask, citation/detail reveal, and inspector behavior without bridge, Hermes, DeepAgents, or external LLM credentials. |
+| Bridge absent | Optional bridge checks may fail, but the UI frames bridge setup as advanced and recoverable: start/restart, confirm `http://127.0.0.1:8788`, or skip/continue serve-only. | Focused quickstart e2e covers absent bridge recovery from optional advanced runtime disclosure after source readiness. |
+| Advanced runtime selected accidentally / unready | If a user selects Hermes, DeepAgents, Custom A2A, or another unready runtime by mistake, prompts and suggested questions explain the inline readiness issue and leave a path back to Local Development Runtime. | Cold-start no-services e2e covers an unready Hermes selection and recovery to Local Development Runtime; focused unit/e2e tests also cover unready Hermes/custom runtime selection without credentials or a running bridge. |
+| Local I/O opt-out / clear | Local I/O remains default-on, redacted, bounded, clearable/exportable, and opt-out capable without making raw/debug logs more prominent than source readiness and inspection affordances. | Cold-start no-services e2e verifies first-viewport prominence; Local I/O unit tests verify opt-out, clear, redaction, and storage boundaries. |
+| Citation/detail unavailable | Missing citation or detail evidence produces a quiet, non-blocking notice and recovery path; the progressive inspector does not open into a broken or trapping state. | Mocked unit/e2e coverage verifies unavailable detail evidence and quiet non-blocking behavior. |
+| Live serve path | A real `llmwiki-serve` HTTP/MCP source drives the same progressive inspector path used by the sample UI: inspect is explicit, citations auto-reveal details from a hidden inspector, and source namespacing remains intact. | `npm run test:e2e:live` passes in clean environments; this Windows development run used `LLMWIKI_LIVE_SERVE_SKIP_SYNC=1 npm run test:e2e:live` because the sibling serve virtualenv was already synced and executable-locked. |
+
 ## Compatibility
 
 This is UI-only and additive. Existing saved source and runtime settings remain
 compatible. Runtime request bodies, source endpoint requests, citation payloads,
-trace shapes, and Local I/O log event shapes are unchanged.
+trace shapes, and Local I/O log event shapes are unchanged. Loop 4 is expected
+to require no ADR unless the operational evidence exposes a contract or security
+policy change.
