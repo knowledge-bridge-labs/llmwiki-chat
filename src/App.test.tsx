@@ -257,6 +257,16 @@ async function openAddRuntime(user: ReturnType<typeof userEvent.setup>) {
   return addRuntime as HTMLDetailsElement
 }
 
+async function openInspectorDetails(user: ReturnType<typeof userEvent.setup>) {
+  const inspectButton = screen.getByRole('button', { name: /(?:Inspect|Hide) map, pages, and details/ })
+  if (inspectButton.getAttribute('aria-expanded') !== 'true') {
+    await user.click(inspectButton)
+  }
+  expect(await screen.findByRole('region', { name: 'Graph' })).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Pages' })).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Details' })).toBeInTheDocument()
+}
+
 function runtimeCardFor(runtimeName: RegExp | string) {
   const name = typeof runtimeName === 'string' ? new RegExp(runtimeName) : runtimeName
   const runtimeCard = screen.getByRole('radio', { name }).closest('article')
@@ -431,6 +441,7 @@ describe('LLMWiki Chat', () => {
   })
 
   it('renders connection inventory and composer', async () => {
+    const user = userEvent.setup()
     render(<App />)
     expect(screen.getAllByText('LLMWiki Chat').length).toBeGreaterThan(0)
     expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
@@ -462,7 +473,7 @@ describe('LLMWiki Chat', () => {
     expect(within(bridgeCard as HTMLElement).queryByRole('button', { name: 'Test bridge' })).not.toBeInTheDocument()
     expect(mcpSetupButton).toHaveAttribute('aria-expanded', 'false')
     expect(within(mcpBridgeCard as HTMLElement).queryByText(/Agent Bridge MCP/)).not.toBeInTheDocument()
-    await openRuntimeSetup(userEvent.setup(), bridgeCard as HTMLElement)
+    await openRuntimeSetup(user, bridgeCard as HTMLElement)
     expect(bridgeSetupButton).toHaveAttribute('aria-expanded', 'true')
     expect(within(bridgeCard as HTMLElement).getByText(/Agent Bridge A2A/)).toBeInTheDocument()
     expect(within(bridgeCard as HTMLElement).getByRole('button', { name: 'Test bridge' })).toBeInTheDocument()
@@ -473,15 +484,24 @@ describe('LLMWiki Chat', () => {
     expect(within(agentRuntime).getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
     const addRuntime = screen.getByText('Add runtime', { selector: 'span' }).closest('details') as HTMLDetailsElement | null
     expect(addRuntime).toBeTruthy()
-    expect(addRuntime?.open).toBe(true)
+    expect(addRuntime?.open).toBe(false)
+    expect(screen.getByLabelText('Runtime type')).not.toBeVisible()
     expect(screen.queryByRole('radio', { name: /Hermes/ })).not.toBeInTheDocument()
     const knowledgeMap = screen.getByRole('region', { name: 'Knowledge map' })
     expect(within(knowledgeMap).getAllByText('Sample Wiki').length).toBeGreaterThan(0)
+    expect(within(knowledgeMap).getByText('2')).toBeInTheDocument()
+    expect(within(knowledgeMap).getByText('pages')).toBeInTheDocument()
+    expect(within(knowledgeMap).getByRole('button', { name: 'Inspect map, pages, and details' })).toHaveAttribute('aria-expanded', 'false')
     expect(within(knowledgeMap).queryByRole('button', { name: 'Ask selected' })).not.toBeInTheDocument()
     expect(within(knowledgeMap).queryByRole('button', { name: 'Write question' })).not.toBeInTheDocument()
     expect(within(knowledgeMap).queryByRole('button', { name: 'Explore source graph' })).not.toBeInTheDocument()
     expect(within(knowledgeMap).queryByText(/fallback/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Inspector scope' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Graph' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Pages' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Details' })).not.toBeInTheDocument()
+    await openInspectorDetails(user)
+    expect(within(knowledgeMap).getByRole('button', { name: 'Hide map, pages, and details' })).toHaveAttribute('aria-expanded', 'true')
     expect(sources).toBeInTheDocument()
     expect(screen.getByLabelText('Question')).toBeInTheDocument()
     expect(screen.getByLabelText('Question')).toHaveValue('')
@@ -1162,7 +1182,11 @@ describe('LLMWiki Chat', () => {
 
     const addRuntime = screen.getByText('Add runtime', { selector: 'span' }).closest('details') as HTMLDetailsElement | null
     expect(addRuntime).toBeTruthy()
-    expect(addRuntime?.open).toBe(true)
+    expect(addRuntime?.open).toBe(false)
+    expect(screen.getByLabelText('Runtime type')).not.toBeVisible()
+    expect(within(agentBridge).getByText(/Local deterministic runtime/)).toBeInTheDocument()
+    expect(within(agentBridge).getByText('Testing/developer mock for UI, trace, citation, and graph checks.')).toBeInTheDocument()
+    await openAddRuntime(user)
     expect(screen.getByRole('option', { name: 'Hermes' })).toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Runtime type'), screen.getByRole('option', { name: 'Hermes' }))
@@ -1309,8 +1333,9 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
-    const nodes = screen.getByRole('region', { name: 'Pages' })
+    const nodes = await screen.findByRole('region', { name: 'Pages' })
     const pageButtons = within(nodes).getAllByRole('button')
     expect(pageButtons[0]).toHaveAccessibleName(/Current Focus hot/)
     expect(pageButtons[1]).toHaveAccessibleName(/Sample Index index/)
@@ -1355,6 +1380,7 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
     const nodes = screen.getByRole('region', { name: 'Pages' })
     await user.click(within(nodes).getByRole('button', { name: /Current Focus hot/ }))
@@ -1425,6 +1451,7 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
     const nodes = screen.getByRole('region', { name: 'Pages' })
     await user.click(within(nodes).getByRole('button', { name: /Current Focus hot/ }))
@@ -1447,6 +1474,7 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
     const nodes = screen.getByRole('region', { name: 'Pages' })
     await user.click(within(nodes).getByRole('button', { name: /Artwork Review Process topic/ }))
@@ -1463,6 +1491,7 @@ describe('LLMWiki Chat', () => {
   })
 
   it('shows more than the old compact graph cap in the page list', async () => {
+    const user = userEvent.setup()
     const nodes = Array.from({ length: 25 }, (_, index) => ({
       id: `page:topic-${index + 1}`,
       label: `Topic ${index + 1}`,
@@ -1485,6 +1514,7 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
     expect(screen.getByRole('region', { name: 'Graph' })).toHaveTextContent('25 pages')
     expect(within(screen.getByRole('region', { name: 'Pages' })).getByRole('button', { name: 'Topic 25 topic' })).toBeInTheDocument()
@@ -1942,9 +1972,8 @@ describe('LLMWiki Chat', () => {
     expect(within(toolTrace).getByText('Sample Wiki')).toBeInTheDocument()
     const citationButton = screen.getByRole('button', { name: /\[1\] Current Focus/ })
     expect(citationButton).toBeInTheDocument()
-    expect(screen.getAllByText('SRC-HOT').length).toBeGreaterThan(0)
 
-    await user.click(inlineCitation)
+    fireEvent.click(inlineCitation)
     await waitFor(() => {
       expect(within(assistantMessage).getAllByRole('button', { name: 'Citation 1: Current Focus' })[0]).toHaveAttribute(
         'aria-pressed',
@@ -2357,12 +2386,14 @@ describe('LLMWiki Chat', () => {
     expect(inlineCitation).toHaveClass('inline-citation')
     const answerText = within(chat).getByText(/External runtime answer cites/)
     expect(assistantMessageFor(answerText)).not.toHaveTextContent('Evidence was returned, but the answer body does not include inline citation anchors.')
-    await user.click(inlineCitation)
+    fireEvent.click(inlineCitation)
 
     await waitFor(() => {
-      expect(within(chat).getByRole('button', { name: 'Citation 1: Runtime Focus' })).toHaveAttribute('aria-pressed', 'true')
+      expect(within(chat).getByRole('button', { name: /\[1\] Runtime Focus/ })).toHaveAttribute('aria-pressed', 'true')
     })
-    const nodes = screen.getByRole('region', { name: 'Pages' })
+    expect(screen.queryByRole('region', { name: 'Pages' })).not.toBeInTheDocument()
+    await openInspectorDetails(user)
+    const nodes = await screen.findByRole('region', { name: 'Pages' })
     expect(within(nodes).getByRole('button', { name: /Runtime Focus topic/ })).toHaveAttribute('aria-pressed', 'true')
     const details = screen.getByRole('region', { name: 'Details' })
     expect(within(details).getByLabelText('Citation evidence')).toHaveTextContent('Runtime evidence should be inspectable')
@@ -2407,7 +2438,7 @@ describe('LLMWiki Chat', () => {
     await waitFor(() => {
       expect(inlineCitation).toHaveAttribute('aria-pressed', 'true')
     })
-    expect(screen.getByRole('region', { name: 'Details' })).toHaveTextContent('Runtime evidence with a source ref anchor.')
+    expect(await screen.findByRole('region', { name: 'Details' })).toHaveTextContent('Runtime evidence with a source ref anchor.')
   })
 
   it('detects raw HTML citation anchors without tag-stripping sanitization', async () => {
@@ -2560,6 +2591,7 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
     const nodes = screen.getByRole('region', { name: 'Pages' })
     await user.click(within(nodes).getByRole('button', { name: /Current Focus hot/ }))
@@ -2603,6 +2635,7 @@ describe('LLMWiki Chat', () => {
 
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    await openInspectorDetails(user)
 
     await openAddSource(user)
     await user.clear(screen.getByLabelText('Name'))
@@ -2643,6 +2676,7 @@ describe('LLMWiki Chat', () => {
     await user.type(screen.getByLabelText('Question'), 'Second question')
     await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
     expect(await screen.findByText(/For "Second question"/)).toBeInTheDocument()
+    await openInspectorDetails(user)
     expect(screen.getByRole('region', { name: 'Details' })).toHaveTextContent('Later evidence should not replace')
 
     const chat = screen.getByRole('region', { name: 'Chat' })
@@ -2757,6 +2791,7 @@ describe('LLMWiki Chat', () => {
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
     await selectLocalDevelopmentRuntime(user)
+    await openInspectorDetails(user)
     const nodesPanel = screen.getByRole('region', { name: 'Pages' })
     expect(within(nodesPanel).getByRole('button', { name: /Current Focus hot/ })).toBeInTheDocument()
 
@@ -3144,6 +3179,7 @@ describe('LLMWiki Chat', () => {
     render(<App />)
     expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
     await user.click(screen.getByRole('checkbox', { name: 'Sample Wiki' }))
+    await openInspectorDetails(user)
 
     const graphPanel = screen.getByRole('region', { name: 'Graph' })
     expect(within(graphPanel).getByText('No map loaded yet.')).toBeInTheDocument()

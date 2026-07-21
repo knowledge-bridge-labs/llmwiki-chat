@@ -7,6 +7,14 @@ source or `llmwiki-agent-bridge` is running. The UI exposes source and runtime
 controls, but it does not provide a single safe checklist that explains what the
 browser can verify and what must run in a trusted local shell.
 
+Loop 3 extends the first-time user problem beyond the Quickstart MVP. The whole
+first screen should feel calm and source-first before any guided setup is opened:
+advanced runtime setup, persistent graph/page/detail panels, and debug-forward
+Local I/O controls should not compete with the first prompt/source readiness
+path. Deeper inspection and runtime configuration remain available, but they
+should be revealed only after an explicit inspect, citation, source, runtime, or
+logging action.
+
 ## Goals
 
 - Add one visible, opt-in quickstart entry point in the empty chat state.
@@ -28,6 +36,22 @@ browser can verify and what must run in a trusted local shell.
   runtime choices after the source/serve-only path is understood.
 - Preserve the Local Development Runtime as the deterministic fallback for UI
   and graph/citation checks.
+- Loop 3: make the default first viewport calm by showing source readiness,
+  question entry, and one or two obvious next actions before Graph, Pages,
+  Details, advanced runtime setup, or debug logging details.
+- Loop 3: stage first expansions so Knowledge Sources/source actions appear
+  before Agent Runtime actions, and Agent Runtime add-runtime controls stay
+  collapsed until the user explicitly asks to add or configure a runtime.
+- Loop 3: make the inspector/right rail progressive: Graph, Pages, and Details
+  should not be visible by default before inspection, but explicit inspect,
+  citation clicks, and page/graph selection inside the inspector should reveal
+  or update the relevant details automatically.
+- Loop 3: preserve the source-first Quickstart, serve-only Local Development
+  Runtime path, and optional advanced runtime disclosure across Quickstart,
+  sidebar, inspector, and answer-review surfaces.
+- Loop 3: keep Local I/O logging default-on and safe, while making raw/debug log
+  controls less prominent in the first viewport and still easy to find, disable,
+  clear, copy, or export when needed.
 
 ## Non-goals
 
@@ -36,6 +60,10 @@ browser can verify and what must run in a trusted local shell.
 - No Hermes or DeepAgents installer automation.
 - No new runtime payload contract.
 - No server-side transcript persistence.
+- Loop 3 does not remove Graph, Pages, Details, citations, run details, or Local
+  I/O logging; it changes when first-time users encounter those surfaces.
+- Loop 3 does not change source, runtime, citation, trace, logging, storage, or
+  network contracts.
 
 ## Requirements
 
@@ -71,7 +99,46 @@ browser can verify and what must run in a trusted local shell.
 - The Step 1 `llmwiki-serve` command disclosure must not create horizontal
   overflow in the quickstart panel at a 500px viewport width.
 
+### Loop 3 first-screen progressive disclosure
+
+- The default first screen and first viewport must emphasize the selected
+  Knowledge Source, ask box, and compact `Show Quickstart` / inspect affordances.
+- The default first screen must not show separate Graph, Pages, or Details panels
+  until the user chooses the explicit inspect action or follows a citation.
+  Page/graph selection updates Details after the inspector has been opened.
+- Knowledge Sources expansion must remain the first setup expansion path; Agent
+  Runtime setup must remain secondary.
+- Agent Runtime add-runtime controls must be collapsed by default and revealed
+  only after an explicit add/configure runtime action.
+- The Quickstart path must remain source-first and must still start with
+  `llmwiki-serve` before runtime or bridge choices.
+- The serve-only path must remain complete: a user with only `llmwiki-serve` and
+  the Local Development Runtime can inspect source evidence, ask deterministic
+  sample questions, review citations, and close setup without configuring a
+  bridge or external LLM endpoint.
+- Advanced runtime disclosure must be consistent wherever it appears: Quickstart,
+  sidebar/runtime cards, answer/run details, and any inspector-adjacent runtime
+  prompts must describe bridge, Hermes, DeepAgents, and OpenAI-compatible
+  runtimes as optional advanced paths.
+- Citation clicks should auto-reveal the inspector/right rail to the relevant
+  Details evidence, and page/graph selections should update Details after the
+  inspector is open. Narrow/mobile screens must provide a clear way back to the
+  answer after citation inspection.
+- Source, bridge/runtime, citation/detail, and logging failures must explain
+  recovery actions without trapping the user or making advanced runtime setup a
+  prerequisite for serve-only work.
+- Local I/O logging must remain default-on with redaction, retention, clear,
+  copy, export, and opt-out controls, but raw log details should not be more
+  prominent than source readiness, first asking, or inspection affordances in the
+  default first viewport.
+- Accessibility and responsive coverage must include keyboard focus order,
+  named regions/buttons, collapsed/expanded states, mobile inspector reveal/back
+  flows, and no horizontal overflow at narrow widths.
+- README/docs/screenshots must match the implemented first-screen disclosure
+  model and avoid showing private paths, tokens, raw logs, or endpoint secrets.
+
 ## Compatibility
 
 This is UI-only and additive. Existing saved source and runtime settings remain
-compatible. Runtime request bodies and source endpoint requests are unchanged.
+compatible. Runtime request bodies, source endpoint requests, citation payloads,
+trace shapes, and Local I/O log event shapes are unchanged.

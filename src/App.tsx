@@ -618,6 +618,7 @@ export default function App() {
   const [runGraph, setRunGraph] = useState<RuntimeGraphState | null>(null)
   const [graphMode, setGraphMode] = useState<GraphMode>('selection')
   const [quickstartEnabled, setQuickstartEnabled] = useState(false)
+  const [inspectorDetailsVisible, setInspectorDetailsVisible] = useState(false)
   const [pageReadCache, setPageReadCache] = useState<Record<string, PageReadCacheEntry>>({})
   const [localIoLoggingEnabled, setLocalIoLoggingEnabled] = useState(loadLocalIoLoggingEnabled)
   const [localIoLogEntries, setLocalIoLogEntries] = useState(() => (
@@ -934,6 +935,7 @@ export default function App() {
   }, [])
 
   const revealDetailsPanel = useCallback(() => {
+    setInspectorDetailsVisible(true)
     const reveal = () => {
       const details = document.getElementById('details-panel')
       if (!details) return
@@ -1530,7 +1532,7 @@ export default function App() {
                         onClick={() => selectCitationEvidence(message, citation)}
                         key={citation.id}
                         data-citation-id={citation.id}
-                        aria-pressed={selectedCitation?.id === citation.id && selectedCitationReturnTarget?.messageId === message.id}
+                        aria-pressed={selectedCitation?.id === citation.id && (!selectedCitationReturnTarget || selectedCitationReturnTarget.messageId === message.id)}
                         aria-controls="details-panel"
                       >
                         [{index + 1}] {citation.title}
@@ -1650,40 +1652,52 @@ export default function App() {
             showSelectionGraph()
             if (!readyConnections.length) focusKnowledgeSources()
           }}
+          detailsVisible={inspectorDetailsVisible}
+          onInspectDetails={() => setInspectorDetailsVisible((visible) => !visible)}
         />
-        <GraphExplorer
-          graph={activeGraph}
-          title={activeGraphMode === 'answer' ? 'Evidence graph' : 'Knowledge map'}
-          emptyTitle="No map loaded yet."
-          emptyDescription="Select and test a Knowledge Source to load page links."
-          selectionPrompt={
-            activeGraphMode === 'answer'
-              ? 'Choose an evidence page to inspect its citation context.'
-              : 'Choose a page in the map to preview its connections.'
-          }
-          selectedNodeId={selectedNodeId}
-          onSelectNode={selectGraphNode}
-        />
-        <NodeList
-          graph={activeGraph}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={selectGraphNode}
-        />
-        <DetailsPanel
-          citation={selectedCitation}
-          graph={activeGraph}
-          sources={activeGraphSources}
-          selectedNodeId={selectedNodeId}
-          pageRead={selectedPageRead}
-          scopeLabel={detailsScopeLabel(activeGraphMode, answerGraphSelectionDiffers)}
-          emptyCopy={
-            activeGraphMode === 'answer'
-              ? 'Choose an evidence page or citation to inspect details.'
-              : 'Choose a page in the map to see its path, links, and source.'
-          }
-          onSelectNode={selectGraphNode}
-          onBackToAnswer={selectedCitationReturnTarget ? () => revealAnswerCitation(selectedCitationReturnTarget) : undefined}
-        />
+        <div
+          className="inspector-expert-panels"
+          id="knowledge-inspector-details"
+          hidden={!inspectorDetailsVisible}
+        >
+          {inspectorDetailsVisible ? (
+            <>
+              <GraphExplorer
+                graph={activeGraph}
+                title={activeGraphMode === 'answer' ? 'Evidence graph' : 'Knowledge map'}
+                emptyTitle="No map loaded yet."
+                emptyDescription="Select and test a Knowledge Source to load page links."
+                selectionPrompt={
+                  activeGraphMode === 'answer'
+                    ? 'Choose an evidence page to inspect its citation context.'
+                    : 'Choose a page in the map to preview its connections.'
+                }
+                selectedNodeId={selectedNodeId}
+                onSelectNode={selectGraphNode}
+              />
+              <NodeList
+                graph={activeGraph}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={selectGraphNode}
+              />
+              <DetailsPanel
+                citation={selectedCitation}
+                graph={activeGraph}
+                sources={activeGraphSources}
+                selectedNodeId={selectedNodeId}
+                pageRead={selectedPageRead}
+                scopeLabel={detailsScopeLabel(activeGraphMode, answerGraphSelectionDiffers)}
+                emptyCopy={
+                  activeGraphMode === 'answer'
+                    ? 'Choose an evidence page or citation to inspect details.'
+                    : 'Choose a page in the map to see its path, links, and source.'
+                }
+                onSelectNode={selectGraphNode}
+                onBackToAnswer={selectedCitationReturnTarget ? () => revealAnswerCitation(selectedCitationReturnTarget) : undefined}
+              />
+            </>
+          ) : null}
+        </div>
         <LocalIoLogPanel
           enabled={localIoLoggingEnabled}
           entries={localIoLogEntries}
@@ -1763,12 +1777,12 @@ function LocalIoLogPanel({
         <span>Local I/O logging</span>
       </label>
       <p>
-        On by default for local debugging. Recent prompts, runtime request payloads, answers, errors, and metadata
-        are stored as bounded JSONL in this browser only. Authorization headers, bearer tokens, API keys, and
-        credential-bearing URL parts are redacted before storage.
+        On by default for local debugging. Stored only in this browser as bounded, redacted JSONL; open the log to copy,
+        export, or clear entries.
       </p>
       {enabled ? (
-        <details className="local-io-log-panel" role="region" aria-label="Local I/O log">
+        <section className="local-io-log-panel" aria-label="Local I/O log">
+        <details className="local-io-log-details">
           <summary className="local-io-log-panel-header">
             <strong>Local I/O log</strong>
             <span>{entries.length ? `${entries.length} retained entr${entries.length === 1 ? 'y' : 'ies'}.` : 'No entries yet.'}</span>
@@ -1845,6 +1859,7 @@ function LocalIoLogPanel({
             ) : null}
           </div>
         </details>
+        </section>
       ) : (
         <p className="local-io-log-disabled">Local I/O logging is off. Stored raw entries were cleared and future turns will not be logged until you re-enable it.</p>
       )}
@@ -2954,7 +2969,6 @@ function AgentRuntimeList({
     ? runtimeTemplateId
     : runtimeTemplates[0]?.id || ''
   const selectedAgentReady = selectedAgent?.status === 'ready'
-  const openAddRuntimeByDefault = testingRuntimesOpen && !configuredAgents.length
   const agentCompletionKey = selectedAgentReady
     ? `${selectedAgent.id}:${selectedAgent.protocol}:${selectedAgent.url || ''}:${selectedAgent.settingsUrl || ''}`
     : ''
@@ -2971,6 +2985,13 @@ function AgentRuntimeList({
     || selectedAgent?.status === 'error'
     ? selectedAgent.status
     : 'setup'
+  const toggleSection = () => {
+    const nextOpen = !sectionOpen
+    setSectionState({ open: nextOpen, completionKey: agentCompletionKey })
+    if (nextOpen && selectedAgent && !expandedAgentCardId) {
+      setExpandedAgentCardId(selectedAgent.id)
+    }
+  }
 
   const addRuntime = () => {
     if (!selectedTemplateId) return
@@ -3158,7 +3179,7 @@ function AgentRuntimeList({
       tone={agentSectionTone}
       statusLabel={agentSectionStatus}
       open={sectionOpen}
-      onToggle={() => setSectionState({ open: !sectionOpen, completionKey: agentCompletionKey })}
+      onToggle={toggleSection}
       bodyId="agent-runtime-section-body"
     >
       <p className="sidebar-section-guidance">Choose a runtime. Selected or edited endpoints are checked automatically; use the test button to retry.</p>
@@ -3176,7 +3197,7 @@ function AgentRuntimeList({
         {runtimeTemplates.length ? (
           <details
             className="add-runtime-disclosure"
-            open={addRuntimeOpen || openAddRuntimeByDefault}
+            open={addRuntimeOpen || undefined}
             onToggle={(event) => setAddRuntimeOpen(event.currentTarget.open)}
           >
             <summary>
@@ -3789,6 +3810,8 @@ function KnowledgeMapSummary({
   sourceNames,
   onSelectAnswer,
   onExploreSources,
+  detailsVisible,
+  onInspectDetails,
 }: {
   activeMode: GraphMode
   answerGraphAvailable: boolean
@@ -3800,6 +3823,8 @@ function KnowledgeMapSummary({
   sourceNames: string[]
   onSelectAnswer: () => void
   onExploreSources: () => void
+  detailsVisible: boolean
+  onInspectDetails: () => void
 }) {
   const sourceIntro = selectedKnowledgeSourceIntro(selectedConnections, readyConnections)
   const graphOverview = graphOverviewLabel(graph)
@@ -3844,6 +3869,15 @@ function KnowledgeMapSummary({
           </button>
         </div>
       ) : null}
+      <button
+        type="button"
+        className="map-inspect-action"
+        aria-expanded={detailsVisible}
+        aria-controls="knowledge-inspector-details"
+        onClick={onInspectDetails}
+      >
+        {detailsVisible ? 'Hide map, pages, and details' : 'Inspect map, pages, and details'}
+      </button>
       <p className={`status-line ${statusTone}`} aria-live="polite">
         {statusText}
       </p>

@@ -1041,6 +1041,10 @@ dd,
   padding-top: 8px;
 }
 
+.local-io-log-details {
+  display: block;
+}
+
 .local-io-log-panel-header {
   display: flex;
   flex-wrap: wrap;
@@ -1062,7 +1066,7 @@ dd,
   font-weight: 760;
 }
 
-.local-io-log-panel[open] > .local-io-log-panel-header::after {
+.local-io-log-details[open] > .local-io-log-panel-header::after {
   content: "Hide log";
 }
 
@@ -1980,6 +1984,11 @@ button:disabled {
   gap: 9px;
 }
 
+.inspector-expert-panels {
+  display: grid;
+  gap: 12px;
+}
+
 .map-title-row {
   display: flex;
   align-items: start;
@@ -2059,6 +2068,18 @@ button:disabled {
 
 .graph-scope-controls button:disabled {
   cursor: not-allowed;
+}
+
+.map-inspect-action {
+  justify-self: stretch;
+  border: 1px solid #a8b7ce;
+  border-radius: 7px;
+  background: #10233f;
+  color: #ffffff;
+  min-height: 34px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 13px;
 }
 
 dl {

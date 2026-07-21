@@ -37,3 +37,35 @@
 - [x] Stabilize Custom A2A/source URL and long-prompt test setup after full
       validation exposed `user.type` URL interleaving in jsdom.
 - [x] Run Loop 2 focused validation commands and full `npm run check`.
+
+## Loop 3
+
+- [x] Record Loop 3 first-screen progressive disclosure scope in spec, plan,
+      tests, and rubric without claiming implementation completion.
+- [x] Keep the default first screen and first viewport calm: source readiness,
+      ask box, and compact opt-in actions are primary.
+- [x] Ensure Graph, Pages, and Details are not shown by default before the
+      explicit inspect action or citation action.
+- [x] Keep Knowledge Sources and source retry/add flows as the first expansion
+      path before Agent Runtime configuration.
+- [x] Keep Agent Runtime add-runtime controls collapsed until an explicit
+      add/configure runtime action.
+- [x] Preserve the Quickstart source-first flow and `llmwiki-serve` Step 1.
+- [x] Preserve a complete serve-only Local Development Runtime path with no
+      bridge, Hermes, DeepAgents, or external LLM endpoint required.
+- [x] Make advanced runtime disclosure consistent across Quickstart, sidebar,
+      runtime cards, inspector-adjacent prompts, and answer/run details.
+- [x] Auto-reveal the inspector/right rail Details view for citations, and keep
+      page/graph selections updating Details after the inspector is open, with a
+      clear mobile back path to the answer.
+- [x] Keep failure recovery non-blocking for source, bridge/runtime,
+      citation/detail, and Local I/O states.
+- [x] Keep Local I/O logging default-on and redacted, but less debug-forward in
+      the default first viewport while retaining opt-out, clear, copy, and export
+      controls.
+- [x] Add focused unit/Playwright coverage for default hidden inspector panels,
+      staged source/runtime expansions, collapsed add-runtime, inspector reveal,
+      citation/details auto-reveal, responsive layout, and accessibility.
+- [x] Refresh README/docs/screenshots after implementation lands and verify they
+      do not expose private paths, tokens, raw logs, or endpoint secrets.
+- [x] Run Loop 3 full `npm run check` release gate after focused validation.

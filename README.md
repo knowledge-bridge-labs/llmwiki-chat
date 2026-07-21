@@ -86,8 +86,9 @@ Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 3. If the source check fails, open `Show llmwiki-serve commands`, start the
    source in a trusted shell, and test again. You can close Quickstart any time
    and configure Knowledge Sources manually.
-4. A ready source loads page, graph, and citation context into the Knowledge
-   map, Pages, and Details panels.
+4. A ready source prepares page, graph, and citation context. Open
+   `Inspect map, pages, and details` when you want to review the Graph, Pages,
+   and Details panels.
 5. With only `llmwiki-serve`, choose `Continue serve-only`. The default Local
    Development Runtime needs no external LLM endpoint, Hermes Agent,
    DeepAgents install, or bridge. It is for deterministic UI, trace, citation,
@@ -153,9 +154,10 @@ current posture.
 
 ![LLMWiki Chat source-first Quickstart flow](docs/assets/llmwiki-chat-workbench.png)
 
-The screenshot shows the current opt-in, source-first Quickstart flow with
-sanitized loopback sample values. It does not show a connected production
-runtime, private Knowledge Source, or managed backend automation.
+The screenshot shows the current opt-in, source-first Quickstart flow with the
+inspector still collapsed behind `Inspect map, pages, and details`. It uses
+sanitized loopback sample values and does not show a connected production
+runtime, private Knowledge Source, raw logs, or managed backend automation.
 
 ## Workbench Modes
 

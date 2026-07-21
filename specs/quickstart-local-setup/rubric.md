@@ -1,11 +1,16 @@
 # First-Time User Quickstart Rubric
 
 Date: 2026-07-21
-Status: loop-2 complete
+Status: loop-3 validated
 
 This rubric scores whether `llmwiki-chat` gives a first-time user a clear,
 non-blocking path from opening the app to a useful first source/evidence
 inspection session.
+
+Loop 3 extends the rubric beyond the Quickstart MVP to the whole first-screen
+progressive disclosure model. Loop 1 and Loop 2 history below remains
+unchanged; Loop 3 scores are based on code, focused unit/e2e validation,
+screenshot review, and safety review evidence.
 
 The target for production-default approval is:
 
@@ -15,7 +20,7 @@ The target for production-default approval is:
 - no required path depends on a real LLM endpoint, Hermes Agent, DeepAgents, or
   `llmwiki-agent-bridge`.
 
-## Rubric
+## Loop 1/2 rubric
 
 | ID | Criterion | Weight | Evidence method |
 |---|---:|---:|---|
@@ -56,6 +61,42 @@ The target for production-default approval is:
 | R8 | 10 | 10 | `@axe-core/playwright` is locked as a dev dependency; `npm run check` passes, including audit with 0 vulnerabilities. | Re-run full `npm run check` only if more changes land before release. |
 | Total | 100 | 99 | Meets loop-2 production-default threshold without claiming manual screen-reader validation. | Keep manual screen-reader pass and fresh-user smoke as follow-ups. |
 
+## Loop 3 rubric
+
+Proposed 100-point gate for first-screen progressive disclosure. Scores should
+not be filled in as earned until the code/test worker lands implementation
+evidence.
+
+| ID | Criterion | Weight | Evidence method |
+|---|---:|---:|---|
+| L3-R1 | Default calm first screen / first viewport: source readiness, ask box, compact Quickstart, and inspect/review affordances are primary; no full checklist, Graph, Pages, Details, add-runtime controls, or raw/debug log details dominate before user action. | 14 | Unit/e2e assert default first viewport content order and absence of default Graph/Pages/Details panels, add-runtime body, and raw Local I/O log details. |
+| L3-R2 | Staged Knowledge Sources vs Agent Runtime expansion: Knowledge Sources, Add source, and source retry are the first setup expansion path; Agent Runtime configuration is secondary. | 12 | Unit/e2e assert source expansion appears before runtime expansion in DOM/focus order and visible copy. |
+| L3-R3 | Quickstart source-first continuity: Quickstart remains opt-in and starts with `llmwiki-serve` Step 1 before any runtime/bridge choices. | 10 | Existing quickstart tests plus Loop 3 regression asserting no runtime/bridge controls on open before source readiness and optional advanced expansion. |
+| L3-R4 | Serve-only path preservation: `llmwiki-serve` plus Local Development Runtime supports first inspection, deterministic asking, citation/detail review, and setup exit without bridge, Hermes, DeepAgents, or external LLM endpoint. | 10 | Unit/e2e serve-only flow from source ready -> continue -> ask -> inspect citation/details -> close setup. |
+| L3-R5 | Inspector/right rail progressive disclosure: Graph, Pages, and Details are hidden before inspect; explicit inspect reveals the panels, citation clicks auto-reveal relevant Details evidence, and page/graph selections update Details after the inspector is open while preserving mobile back-to-answer focus. | 14 | Playwright desktop/mobile assertions for default hidden panels, inspector expansion, citation/details auto-reveal, selected evidence updates, and return focus. |
+| L3-R6 | Cross-surface advanced runtime disclosure: Quickstart, sidebar/runtime cards, inspector-adjacent prompts, and answer/run details consistently frame `llmwiki-agent-bridge`, Hermes, DeepAgents, and OpenAI-compatible runtimes as optional advanced paths. | 10 | Copy review plus unit/e2e assertions that advanced runtime copy is collapsed until requested and never blocks serve-only. |
+| L3-R7 | Failure recovery: source, bridge/runtime, citation/detail, and logging failures provide retry, skip/continue, close/dismiss, or clear guidance without trapping the user. | 8 | Mocked failure tests for source check, bridge 404, unavailable citation/detail evidence, and Local I/O clear/disable states. |
+| L3-R8 | Accessibility and responsive coverage: staged controls are keyboard reachable, named for screen readers, focus moves to revealed content, and narrow/mobile layouts avoid horizontal overflow. | 8 | Focus-order tests, ARIA role/name assertions, focused axe scans, and 500px/mobile overflow checks across default, inspector, runtime-expanded, and logging states. |
+| L3-R9 | Docs/screenshots alignment: README/docs/screenshots show the implemented first-screen progressive disclosure state and do not document pending UI as shipped behavior. | 6 | Source review plus visual screenshot review after implementation; no private paths, tokens, raw logs, or endpoint secrets. |
+| L3-R10 | Safety and testability: browser/process boundary, URL/secret redaction, default-on Local I/O logging, and deterministic no-credential checks are preserved while the log UI is less debug-forward by default. | 8 | Code review, redaction/localStorage tests, no process launcher review, and focused docs/UI validation without credentials. |
+| Total | | 100 | |
+
+## Loop 3 score
+
+| ID | Weight | Score | Current evidence | Gap / next improvement |
+|---|---:|---:|---|---|
+| L3-R1 | 14 | 14 | Unit/e2e assert default Quickstart region absent, Graph/Pages/Details absent, add-runtime body hidden, Local I/O raw actions hidden, and README screenshot shows only the compact inspect affordance. | None. |
+| L3-R2 | 12 | 12 | Unit tests assert Knowledge Sources precedes Agent Runtime; e2e source review/focus actions keep source setup before runtime expansion. | None. |
+| L3-R3 | 10 | 10 | Quickstart tests still assert opt-in rendering, Step 1 `llmwiki-serve` first, and no bridge/runtime controls before source readiness plus optional advanced expansion. | None. |
+| L3-R4 | 10 | 10 | Serve-only e2e covers source ready -> ask with Local Development Runtime -> citation/detail inspection without bridge, Hermes, DeepAgents, or external LLM endpoint. | None. |
+| L3-R5 | 14 | 14 | Inspector is hidden by default, explicit inspect reveals Graph/Pages/Details, citation clicks auto-reveal Details, page/graph selection updates selected evidence after inspector open, and mobile back-to-answer focus is covered. | None. |
+| L3-R6 | 10 | 9 | Quickstart/sidebar/runtime card tests keep `llmwiki-agent-bridge`, Hermes, DeepAgents, Copilot/custom runtimes behind optional add/advanced disclosure and never block serve-only. | Real managed install/readiness UX for Hermes/DeepAgents remains a future quickstart feature, not part of this UI-only loop. |
+| L3-R7 | 8 | 8 | Tests cover source retry guidance, bridge 404 recovery, quiet unavailable-evidence notice, and Local I/O opt-out/clear states. | None. |
+| L3-R8 | 8 | 8 | Focus/role tests plus Playwright axe scans cover default app shell, inspector-open, add-runtime-open, Local I/O-open, opened Quickstart, mobile source commands, and advanced Quickstart; 500px overflow checks cover Quickstart commands and expanded app-shell state. | Manual screen-reader pass remains a separate follow-up and is not claimed. |
+| L3-R9 | 6 | 6 | README copy and `docs/assets/llmwiki-chat-workbench.png` were refreshed to show source-first Quickstart with inspector collapsed and no private paths, tokens, raw logs, or private endpoints. | None. |
+| L3-R10 | 8 | 8 | Browser/process boundary and Local I/O contracts remain unchanged; token redaction/localStorage tests pass; full no-credential `npm run check` passes, including pack dry-run and audit. | None. |
+| Total | 100 | 99 | Meets the Loop 3 production-default score threshold with full release-gate validation. | Manual fresh-user/screen-reader observation remains useful follow-up evidence, but is not required for this automated gate. |
+
 ## Loop notes
 
 - The first successful user path is now `Show Quickstart` -> `Test sample source`
@@ -67,3 +108,7 @@ The target for production-default approval is:
 - Loop 2 keeps the persistent sidebar source-first and clarifies that the
   runtime section is for Agent Runtime selection, with Local Development Runtime
   as the default and bridge as optional.
+- Loop 3 broadens the target from Quickstart MVP to the whole first-screen
+  experience: calm default viewport, staged source/runtime expansions,
+  progressive inspector/right rail, optional advanced runtimes, and safer
+  less-debug-forward Local I/O visibility.

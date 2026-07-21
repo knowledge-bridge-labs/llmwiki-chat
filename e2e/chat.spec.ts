@@ -34,8 +34,16 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   await expect(endpointMetadata).not.toHaveAttribute('open', '')
   await localSummary.getByText('Runtime and endpoint details').click()
   await expect(localSummary.getByText('http://127.0.0.1:8765')).toBeVisible()
-  await expect(page.locator('.add-runtime-disclosure')).toHaveAttribute('open', '')
+  await expect(page.locator('.add-runtime-disclosure')).not.toHaveAttribute('open', '')
+  await expect(page.getByLabel('Runtime type')).toBeHidden()
   await expect(page.getByRole('radio', { name: /Hermes/ })).toHaveCount(0)
+  await expect(page.getByRole('checkbox', { name: /Local I\/O logging/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Copy JSONL' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Clear local I/O log' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Inspect map, pages, and details' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Graph' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Pages' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
   await expect(page.getByText('llmwiki-markdown')).toHaveCount(1)
   await expect(page.getByText('atomicstrata/llm-wiki-compiler')).toHaveCount(1)
@@ -86,6 +94,11 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   const inlineCitation = latestAssistant.getByRole('button', { name: 'Citation 1: Current Focus' }).first()
   await expect(inlineCitation).toBeVisible()
   await expect(page.getByRole('button', { name: /\[1\] Current Focus/ })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
+  await inlineCitation.click()
+  await expect(page.getByRole('button', { name: /\[1\] Current Focus/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.selected-node')).toHaveCount(1)
+  if (!isMobile) await expectDetailsInsideInspectorViewport(page)
   const citationEvidence = page.getByLabel('Citation evidence')
   await expect(citationEvidence.getByText('Current Focus', { exact: true })).toBeVisible()
   await expect(citationEvidence.getByText('Required label copy and release readiness are current focus items.')).toBeVisible()
@@ -96,11 +109,6 @@ test('answers a selected LLMWiki query with citations and graph context', async 
   await expect(details.getByText('Related context')).toBeVisible()
   await details.getByText('Related context').click()
   await expect(details.getByRole('button', { name: /Artwork Review Process topic/ })).toBeVisible()
-
-  await inlineCitation.click()
-  await expect(page.getByRole('button', { name: /\[1\] Current Focus/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('.selected-node')).toHaveCount(1)
-  if (!isMobile) await expectDetailsInsideInspectorViewport(page)
 
   await page.getByLabel('Select graph node Current Focus (hot)').click()
   await expect(page.getByRole('region', { name: 'Details' }).getByText('Headings')).toBeVisible()
@@ -168,6 +176,7 @@ test('keeps answer scope and evidence graph clear when source selection changes 
   const knowledgeMap = page.getByRole('region', { name: 'Knowledge map' })
   await expect(knowledgeMap).toContainText('Selected answer evidence')
   await expect(knowledgeMap).toContainText('Showing the selected answer evidence graph; current selected sources are different.')
+  await openInspectorDetails(page)
   await expect(page.getByRole('region', { name: 'Graph' }).getByLabel('Knowledge graph overview')).toBeVisible()
   await expect(runDetails).toContainText('Sample Packaging LLMWiki · llmwiki-http')
 
@@ -518,7 +527,22 @@ test('quickstart states pass focused accessibility scans', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/')
   await expect(page.getByRole('region', { name: 'Quickstart' })).toHaveCount(0)
-  await expectNoAxeViolations(page, 'default empty state', '.chat-panel')
+  await expectNoAxeViolations(page, 'default app shell', '.app-shell')
+
+  await openInspectorDetails(page)
+  await expectNoAxeViolations(page, 'inspector details open', '.inspector')
+
+  await openAgentBridgeSection(page)
+  await page.locator('.add-runtime-disclosure summary').click()
+  await expect(page.getByLabel('Runtime type')).toBeVisible()
+  await expectNoAxeViolations(page, 'runtime add disclosure open', '.sidebar')
+
+  await page.getByRole('region', { name: 'Local I/O log', exact: true }).locator('.local-io-log-panel-header').click()
+  await expect(page.getByRole('button', { name: 'Copy JSONL' })).toBeVisible()
+  await expectNoAxeViolations(page, 'local I/O log open', '.inspector')
+  await page.setViewportSize({ width: 500, height: 720 })
+  await expectAppShellNoHorizontalOverflow(page)
+  await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('button', { name: 'Show Quickstart' }).click()
   const quickstart = page.getByRole('region', { name: 'Quickstart' })
@@ -554,6 +578,10 @@ test('labels suggested prompts as ask actions and clears the composer when they 
 test('loads graph, nodes, and details from graph endpoint before querying', async ({ page }) => {
   await page.goto('/')
 
+  await expect(page.getByRole('region', { name: 'Graph' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Pages' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Details' })).toHaveCount(0)
+  await openInspectorDetails(page)
   await expect(page.getByRole('region', { name: 'Graph' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Pages' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Details' })).toBeVisible()
@@ -567,6 +595,7 @@ test('shows selected graph page details without prompt shortcut actions', async 
   await page.goto('/')
   await expect(page.getByText('Sample Packaging LLMWiki').first()).toBeVisible()
 
+  await openInspectorDetails(page)
   const nodesPanel = page.getByRole('region', { name: 'Pages' })
   await nodesPanel.getByRole('button', { name: /Current Focus hot/ }).click()
 
@@ -586,6 +615,7 @@ test('shows an explicit graph empty state when selected sources are cleared', as
   await openKnowledgeSourcesSection(page)
   await page.getByRole('checkbox', { name: 'Sample Packaging LLMWiki' }).uncheck()
 
+  await openInspectorDetails(page)
   const graphPanel = page.getByRole('region', { name: 'Graph' })
   await expect(graphPanel.getByText('No map loaded yet.')).toBeVisible()
   await expect(graphPanel.getByText('Select and test a Knowledge Source to load page links.')).toBeVisible()
@@ -997,7 +1027,9 @@ test('keeps Hermes explicitly selectable across add and remove cycles', async ({
 
   await openSidebarSection(page.getByRole('region', { name: 'Agent runtime' }))
   const addRuntime = page.locator('.add-runtime-disclosure')
-  await expect(addRuntime).toHaveAttribute('open', '')
+  await expect(addRuntime).not.toHaveAttribute('open', '')
+  await expect(page.getByLabel('Runtime type')).toBeHidden()
+  await addRuntime.locator('summary').click()
   await expect(page.getByLabel('Runtime type')).toContainText('Hermes')
 
   await page.getByLabel('Runtime type').selectOption({ label: 'Hermes' })
@@ -1217,6 +1249,16 @@ async function openSourceRuntimeDetails(page: Page): Promise<void> {
   }
 }
 
+async function openInspectorDetails(page: Page): Promise<void> {
+  const inspect = page.getByRole('button', { name: /(?:Inspect|Hide) map, pages, and details/ })
+  if ((await inspect.getAttribute('aria-expanded')) !== 'true') {
+    await inspect.click()
+  }
+  await expect(page.getByRole('region', { name: 'Graph' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Pages' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Details' })).toBeVisible()
+}
+
 async function openAddSource(page: Page): Promise<void> {
   await openKnowledgeSourcesSection(page)
   const addSource = page.locator('.add-connection')
@@ -1316,6 +1358,34 @@ async function expectQuickstartPanelNoHorizontalOverflow(page: Page): Promise<vo
   expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
   expect(metrics.panelLeft).toBeGreaterThanOrEqual(-1)
   expect(metrics.panelRight).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
+  expect(metrics.overflowingElements).toEqual([])
+}
+
+async function expectAppShellNoHorizontalOverflow(page: Page): Promise<void> {
+  const metrics = await page.evaluate(() => {
+    const checkedElements = Array.from(document.querySelectorAll(
+      '.app-shell, .chat-panel, .inspector, .sidebar, .knowledge-map-summary, .local-io-log-controls, .local-io-log-panel, .add-runtime-body',
+    ))
+
+    return {
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      overflowingElements: checkedElements
+        .map((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: typeof element.className === 'string' ? element.className : '',
+            text: element.textContent?.trim().slice(0, 80) || element.tagName.toLowerCase(),
+            left: box.left,
+            right: box.right,
+          }
+        })
+        .filter((box) => box.left < -1 || box.right > document.documentElement.clientWidth + 1),
+    }
+  })
+
+  expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.documentClientWidth + 1)
   expect(metrics.overflowingElements).toEqual([])
 }
 
