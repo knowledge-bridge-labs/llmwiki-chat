@@ -9,6 +9,14 @@ begin. Dates use `YYYY-MM-DD`.
 
 - _No changes yet._
 
+## 0.1.3 - 2026-07-22
+
+- Removed stale fixed-version README references from the npm package page so
+  the public-preview and package-artifact sections do not drift after future
+  patch releases.
+- Updated package metadata and generated license artifact headers for the
+  `0.1.3` npm patch release.
+
 ## 0.1.2 - 2026-07-22
 
 - Refreshed the README demo image so the main package page shows the default
