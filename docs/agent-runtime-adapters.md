@@ -179,7 +179,17 @@ The companion bridge:
 - returns a structured `llmwiki_agent_result` artifact with `answer`,
   `citations`, merged `graph`, and `steps`
 
-Local checkout usage:
+Published package usage:
+
+```bash
+LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
+LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
+LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
+npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge
+```
+
+Source checkout usage remains supported for bridge development and release
+checks:
 
 ```bash
 git clone https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge.git
@@ -189,15 +199,6 @@ LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
 LLMWIKI_AGENT_BRIDGE_MODEL=hermes-agent \
 LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=hermes \
 npm exec -- llmwiki-agent-bridge
-```
-
-After npm publication, use the package binary instead:
-
-```bash
-LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
-LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
-LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
-npm exec --package llmwiki-agent-bridge -- llmwiki-agent-bridge
 ```
 
 Use `LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=hermes` for Hermes or a
