@@ -9,6 +9,20 @@ begin. Dates use `YYYY-MM-DD`.
 
 - _No changes yet._
 
+## 0.1.1 - 2026-07-21
+
+- Refined the first-run experience so Quickstart stays opt-in, source readiness
+  appears before optional runtime/bridge setup, and Graph/Pages/Details remain
+  behind explicit inspection or citation actions.
+- Added operational first-user gates for cold-start/no-services, missing
+  `llmwiki-serve`, serve-only readiness, advanced-runtime recovery, Local I/O
+  visibility, citation/detail recovery, and live `llmwiki-serve` evidence.
+- Hardened live `llmwiki-serve` E2E startup on Windows by using the synced local
+  executable when available and passing explicit local CORS origins.
+- Kept the main ask button neutral (`Ask selected source` / `Ask selected
+  sources`) so sample wiki titles do not read like product-specific primary
+  actions.
+
 ## 0.1.0 - 2026-07-21
 
 - Added tokenless npm Trusted Publishing release workflow and documentation for

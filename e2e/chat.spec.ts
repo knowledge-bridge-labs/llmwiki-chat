@@ -957,7 +957,7 @@ test('adds and queries an MCP knowledge source', async ({ page }) => {
   await readyMcpConnection.getByRole('button', { name: 'Use only this source' }).click()
 
   await page.getByLabel('Question').fill('What does MCP know?')
-  await page.getByRole('button', { name: 'Ask MCP Endpoint' }).click()
+  await page.getByRole('button', { name: 'Ask selected source' }).click()
 
   const toolTrace = page.getByLabel('Tool call trace')
   await expandAgentTrace(page.getByLabel('Local Development Runtime run details'))
