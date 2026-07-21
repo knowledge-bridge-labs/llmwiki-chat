@@ -5,6 +5,7 @@ import {
   fetchJson,
   normalizeDiagnosticEnvelope,
   normalizeGraphPayload,
+  normalizeKnowledgePage,
 } from './serveClient'
 import type {
   AgentConnection,
@@ -17,6 +18,7 @@ import type {
   Connection,
   Diagnostic,
   KnowledgeGraph,
+  KnowledgePage,
   KnowledgeQueryResult,
   Protocol,
 } from './domain'
@@ -26,6 +28,7 @@ import { agentRuntimeUrlPolicyMessage, isAllowedAgentRuntimeUrl } from './urlPol
 const EXTERNAL_A2A_AGENT_CARD_TIMEOUT_MS = 10_000
 const EXTERNAL_A2A_RUNTIME_MESSAGE_TIMEOUT_MS = 120_000
 const BRIDGE_MCP_DISCOVERY_TIMEOUT_MS = 10_000
+const BRIDGE_MCP_SOURCE_READ_TIMEOUT_MS = 10_000
 const BRIDGE_MCP_RUNTIME_TOOL_TIMEOUT_MS = 120_000
 const LOCAL_AGENT_BRIDGE_URL = 'http://127.0.0.1:8788'
 const AGENT_RUNTIME_MESSAGE_LIMIT = 16
@@ -273,6 +276,53 @@ export async function discoverBridgeKnowledgeSources(
     BRIDGE_MCP_DISCOVERY_TIMEOUT_MS,
   )
   return normalizeBridgeKnowledgeSources(result)
+}
+
+export async function readBridgeKnowledgeSourcePage(
+  agent: AgentConnection,
+  sourceId: string,
+  pageId: string,
+  signal?: AbortSignal,
+): Promise<KnowledgePage> {
+  const result = await callBridgeMcpMethod(
+    agent,
+    'tools/call',
+    {
+      name: 'llmwiki_read',
+      arguments: {
+        sourceId,
+        source_id: sourceId,
+        pageId,
+        page_id: pageId,
+      },
+    },
+    signal,
+    `${agent.name} llmwiki_read`,
+    BRIDGE_MCP_SOURCE_READ_TIMEOUT_MS,
+  )
+  if (result.isError === true) {
+    throw errorWithDiagnostic(
+      `${agent.name} llmwiki_read returned tool error: ${extractMcpToolText(result) || 'unknown tool error'}`,
+      result,
+    )
+  }
+
+  const payload = extractMcpReadResultPayload(result)
+  if (!payload) {
+    throw new Error(`${agent.name} llmwiki_read returned no page payload for source ${sourceId}.`)
+  }
+
+  const pagePayload = bridgeKnowledgePagePayload(payload)
+  const source = asRecord(payload.source)
+  const connection: Connection = {
+    id: sourceId,
+    name: readString(source || {}, 'name') || readString(source || {}, 'title') || sourceId,
+    protocol: 'llmwiki-http',
+    url: '',
+    selected: true,
+    status: 'ready',
+  }
+  return normalizeKnowledgePage(connection, pagePayload, pageId, `${agent.name} llmwiki_read`)
 }
 
 async function discoverBridgeMcpAgentRuntime(
@@ -1314,6 +1364,49 @@ function extractMcpAgentResultPayload(payload: Record<string, unknown>): Record<
   }
 
   return unwrapAgentResultPayload(payload)
+}
+
+function extractMcpReadResultPayload(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const directCandidates = [
+    asRecord(payload.structuredContent ?? payload.structured_content),
+    asRecord(payload.data),
+    asRecord(payload.llmwiki_read),
+    payload,
+  ]
+  for (const candidate of directCandidates) {
+    const result = unwrapMcpReadPayload(candidate)
+    if (result) return result
+  }
+
+  for (const part of readRecordArray(payload.content)) {
+    const data = unwrapMcpReadPayload(asRecord(part.data))
+    if (data) return data
+    const parsedText = unwrapMcpReadPayload(parseRecord(readString(part, 'text')))
+    if (parsedText) return parsedText
+  }
+
+  return unwrapMcpReadPayload(payload)
+}
+
+function unwrapMcpReadPayload(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!payload) return null
+  const nested = asRecord(payload.llmwiki_read)
+    || asRecord(payload.result)
+    || asRecord(payload.data)
+  if (nested && isMcpReadPayload(nested)) return nested
+  return isMcpReadPayload(payload) ? payload : null
+}
+
+function isMcpReadPayload(payload: Record<string, unknown>): boolean {
+  return Boolean(asRecord(payload.page))
+    || typeof payload.text === 'string'
+    || typeof payload.markdown === 'string'
+    || payload.found === false
+}
+
+function bridgeKnowledgePagePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const page = asRecord(payload.page)
+  return page ? { ...payload, ...page } : payload
 }
 
 function unwrapAgentResultPayload(payload: Record<string, unknown> | null): Record<string, unknown> | null {

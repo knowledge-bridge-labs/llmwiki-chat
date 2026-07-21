@@ -5,6 +5,7 @@ import {
   agentClientFor,
   discoverBridgeKnowledgeSources,
   discoverAgentRuntime,
+  readBridgeKnowledgeSourcePage,
   starterAgentConnections,
 } from './agentRuntimes'
 import type { AgentConnection, Connection } from './domain'
@@ -199,6 +200,54 @@ describe('BridgeMcpAgentRuntimeClient', () => {
         capabilities: ['llmwiki_context'],
       }),
     ])
+  })
+
+  it('reads bridge-managed Knowledge Source pages through llmwiki_read', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('http://127.0.0.1:8788/mcp')
+      requestBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+      return Response.json({
+        jsonrpc: '2.0',
+        id: requestBody.id,
+        result: {
+          structuredContent: {
+            llmwiki_read: {
+              source: { id: 'project-wiki', name: 'Project Wiki' },
+              pageId: 'release',
+              page: {
+                id: 'release',
+                title: 'Release',
+                path: 'release.md',
+                markdown: '# Release\n\nBridge-mediated page body.',
+                source_refs: ['SRC-1'],
+              },
+            },
+          },
+        },
+      })
+    }))
+
+    await expect(readBridgeKnowledgeSourcePage(bridgeMcpRuntime, 'project-wiki', 'release')).resolves.toEqual({
+      id: 'release',
+      title: 'Release',
+      path: 'release.md',
+      text: '# Release\n\nBridge-mediated page body.',
+      sourceRefs: ['SRC-1'],
+    })
+    expect(requestBody).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'llmwiki_read',
+        arguments: {
+          sourceId: 'project-wiki',
+          source_id: 'project-wiki',
+          pageId: 'release',
+          page_id: 'release',
+        },
+      },
+    })
   })
 
   it('runs llmwiki_agent_run through MCP tools/call with selected ready sources', async () => {

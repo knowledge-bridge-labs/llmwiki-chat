@@ -3,6 +3,7 @@ export {
   agentRuntimeRegistry,
   discoverBridgeKnowledgeSources,
   discoverAgentRuntime,
+  readBridgeKnowledgeSourcePage,
   starterAgentConnections,
   BridgeMcpAgentRuntimeClient,
   ExternalA2aAgentRuntimeClient,

@@ -236,6 +236,13 @@ direct source cards when you want to test or debug one `llmwiki-serve` endpoint
 without routing through a bridge. Bridge-managed sources are not saved as local
 chat direct-source configuration.
 
+Graph and page/detail preview state keeps bridge ownership metadata for those
+sources. When a selected page belongs to a bridge-managed source, chat calls the
+owning bridge MCP `llmwiki_read` tool with the bridge source id and page id, then
+renders the returned `KnowledgePage`. If that bridge runtime is missing or not
+ready, the Details panel shows a preview error. Chat does not fall back to
+fetching the bridge-managed source URL directly from the browser.
+
 The bridge owns server-side source access policy. Use
 `LLMWIKI_AGENT_BRIDGE_SOURCE_POLICY` to choose the outbound Knowledge Source URL
 policy and `LLMWIKI_AGENT_BRIDGE_ALLOWED_SOURCE_ORIGINS` for exact source-origin
@@ -247,10 +254,10 @@ Keep provider keys in the bridge process environment. Do not put model-provider
 keys in browser fields, URLs, docs, screenshots, Knowledge Source descriptors,
 or package artifacts. Bridge discovery and answer runs go through the bridge
 URL; the bridge calls selected Knowledge Sources and the configured runtime from
-Node. The local workbench may still use structured source URLs from selected
-bridge-managed sources for detail reads such as page previews. Do not copy
-private source URLs into public traces, docs, examples, screenshots, or package
-artifacts.
+Node. Bridge-managed detail reads such as page previews also go through the
+bridge URL via MCP `llmwiki_read`; direct source URLs remain for direct source
+cards and standalone debugging. Do not copy private source URLs into public
+traces, docs, examples, screenshots, or package artifacts.
 
 Bridge bearer tokens are different from provider API keys. A bridge bearer token
 authorizes browser-to-bridge A2A requests and is configured with

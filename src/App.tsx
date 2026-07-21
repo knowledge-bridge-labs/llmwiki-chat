@@ -20,6 +20,7 @@ import {
   defaultBridgeOrchestrationMode,
   discoverAgentRuntime,
   discoverBridgeKnowledgeSources,
+  readBridgeKnowledgeSourcePage,
   starterAgentConnections,
   type AgentRuntimeRequestLog,
 } from './agents'
@@ -146,6 +147,7 @@ interface ScopeSourceSnapshot {
   protocol: Protocol
   url: string
   status: Connection['status']
+  bridgeSource?: NonNullable<Connection['bridgeSource']>
 }
 
 interface AnswerScopeSnapshot {
@@ -752,7 +754,7 @@ export default function App() {
     pageReadRequests.current.add(selectedPageReadRequest.cacheKey)
 
     const controller = new AbortController()
-    void readPageForSource(selectedPageReadRequest.source, selectedPageReadRequest.pageId, controller.signal)
+    void readPageForSource(selectedPageReadRequest.source, selectedPageReadRequest.pageId, agents, controller.signal)
       .then((page) => {
         setPageReadCache((current) => ({
           ...current,
@@ -781,7 +783,7 @@ export default function App() {
       .finally(() => {
         pageReadRequests.current.delete(selectedPageReadRequest.cacheKey)
       })
-  }, [pageReadCache, selectedGraphNode, selectedPageReadRequest])
+  }, [agents, pageReadCache, selectedGraphNode, selectedPageReadRequest])
 
   const discover = useCallback(async (connection: Connection) => {
     const request = createSourceDiscoveryRequest(connection)
@@ -4660,6 +4662,7 @@ function sourceScopeSnapshot(connection: Connection): ScopeSourceSnapshot {
     protocol: connection.protocol,
     url: connection.url,
     status: connection.status,
+    ...(connection.bridgeSource ? { bridgeSource: connection.bridgeSource } : {}),
   }
 }
 
@@ -4684,7 +4687,10 @@ function pageReadIdForNode(node: KnowledgeGraph['nodes'][number]): string {
 }
 
 function pageReadCacheKey(source: ScopeSourceSnapshot, pageId: string): string {
-  return [source.id, source.protocol, source.url, pageId].join('\u0001')
+  const bridgeKey = source.bridgeSource
+    ? `${source.bridgeSource.agentId}:${source.bridgeSource.sourceId}`
+    : ''
+  return [source.id, source.protocol, source.url, bridgeKey, pageId].join('\u0001')
 }
 
 function loadingPageReadEntry(node: KnowledgeGraph['nodes'][number]): PageReadCacheEntry {
@@ -4700,8 +4706,29 @@ function loadingPageReadEntry(node: KnowledgeGraph['nodes'][number]): PageReadCa
 async function readPageForSource(
   source: ScopeSourceSnapshot,
   pageId: string,
+  agents: AgentConnection[],
   signal?: AbortSignal,
 ): Promise<KnowledgePage> {
+  if (source.bridgeSource) {
+    const bridgeAgent = agents.find((agent) => agent.id === source.bridgeSource?.agentId && isBridgeAgent(agent))
+    if (!bridgeAgent) {
+      throw new Error(
+        `Cannot preview ${source.name}: owning bridge runtime ${source.bridgeSource.agentName} is not available. Test or reselect that bridge, then try again.`,
+      )
+    }
+    if (bridgeAgent.status !== 'ready') {
+      throw new Error(
+        `Cannot preview ${source.name}: owning bridge runtime ${bridgeAgent.name} is ${bridgeAgent.status}. Test the bridge, then try again.`,
+      )
+    }
+    if (!bridgeAgent.url?.trim()) {
+      throw new Error(
+        `Cannot preview ${source.name}: owning bridge runtime ${bridgeAgent.name} has no bridge URL. Configure and test the bridge, then try again.`,
+      )
+    }
+    return readBridgeKnowledgeSourcePage(bridgeAgent, source.bridgeSource.sourceId, pageId, signal)
+  }
+
   const connection = connectionFromScopeSource(source)
   if (!connection.url.trim()) {
     throw new Error(`No endpoint URL is available for ${source.name}.`)
