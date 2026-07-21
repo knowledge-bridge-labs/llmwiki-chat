@@ -89,6 +89,7 @@ Loop 3 implementation surfaces:
 - `e2e/chat.spec.ts`
 - `README.md`
 - `docs/assets/llmwiki-chat-workbench.png`
+- `docs/assets/llmwiki-chat-quickstart.png`
 - `specs/quickstart-local-setup/spec.md`
 - `specs/quickstart-local-setup/plan.md`
 - `specs/quickstart-local-setup/tasks.md`

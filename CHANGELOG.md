@@ -9,6 +9,15 @@ begin. Dates use `YYYY-MM-DD`.
 
 - _No changes yet._
 
+## 0.1.2 - 2026-07-22
+
+- Refreshed the README demo image so the main package page shows the default
+  source-first workbench before Quickstart is opened.
+- Preserved the post-click Quickstart-open screenshot as a separate docs asset
+  for future Quickstart-specific documentation.
+- Updated Quickstart spec/rubric notes so main demo and Quickstart-open images
+  have distinct roles.
+
 ## 0.1.1 - 2026-07-21
 
 - Refined the first-run experience so Quickstart stays opt-in, source readiness
