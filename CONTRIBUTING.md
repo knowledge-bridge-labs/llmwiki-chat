@@ -39,7 +39,7 @@ with a wiki folder:
 
 ```bash
 uv sync --extra dev
-uv run llmwiki-serve serve ./tests/fixtures/sample-wiki --host 127.0.0.1 --port 8765
+uv run llmwiki-serve serve ./examples/sample-wiki --host 127.0.0.1 --port 8765
 ```
 
 Then start this client:

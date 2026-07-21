@@ -5,12 +5,33 @@ automation remains follow-up
 Owner: llmwiki-chat / llmwiki-agent-bridge / llmwiki-serve
 Last updated: 2026-07-21
 
-## Goal
+## Implemented Browser-Safe MVP
 
-Make the first-run path work from `llmwiki-chat` with one visible quickstart
-entry point. The current MVP is browser-guided: it shows safe commands and runs
-source/runtime probes after the user starts local services. It does not install
-packages or launch local processes from the browser.
+The current first-run path works from `llmwiki-chat` through one visible
+Quickstart panel. The MVP is browser-guided: it shows safe commands and runs
+source/runtime probes after the user starts local services in a trusted shell.
+It does not install packages, launch local processes, read arbitrary local wiki
+paths, or register sources with a backend helper from browser-only UI code.
+
+Implemented success means:
+
+1. the Quickstart panel appears in the empty chat state,
+2. the panel makes the browser/process boundary explicit,
+3. the panel shows copyable commands for `llmwiki-serve` sample usage and
+   `llmwiki-agent-bridge@0.1.0`,
+4. the user can test the prefilled local sample source after starting
+   `llmwiki-serve`,
+5. the user can test a local bridge after starting `llmwiki-agent-bridge`,
+6. the user can switch to Local Development Runtime for deterministic UI checks,
+7. chat entry is enabled only through the existing source/runtime readiness
+   checks.
+
+## Future Managed Quickstart Goal
+
+A future managed quickstart may make the button feel like "start LLMWiki", but
+process launching, installation, source registration, and privileged local
+operations must be handled by a local trusted helper, not by browser-only UI
+code. That future flow should:
 
 1. detect local `llmwiki-agent-bridge` and `llmwiki-serve` status,
 2. show commands for starting a default sample wiki when no source is configured,
@@ -19,11 +40,19 @@ packages or launch local processes from the browser.
 5. verify the runtime/source path with smoke tests,
 6. enter chat with working grounded answers.
 
-The button in `llmwiki-chat` should feel like "start LLMWiki", but process
-launching, installation, and privileged local operations must be handled by a
-local trusted helper, not by browser-only UI code.
-
 ## Product Flow
+
+Implemented MVP flow:
+
+```text
+Open llmwiki-chat
+→ Read browser-safe Quickstart panel
+→ Start or reuse llmwiki-serve / llmwiki-agent-bridge in a trusted shell
+→ Test sample source, test local bridge, or choose Local Development Runtime
+→ Start chat when existing readiness checks pass
+```
+
+Future managed flow:
 
 ```text
 Open llmwiki-chat
@@ -38,7 +67,7 @@ Open llmwiki-chat
 
 ## Runtime Choices
 
-The quickstart should present runtime choices in this order:
+The future managed quickstart should present runtime choices in this order:
 
 1. existing configured runtime,
 2. Hermes Agent,
@@ -53,15 +82,15 @@ user confirmation.
 
 | Component | Responsibility |
 |---|---|
-| `llmwiki-chat` | Wizard UI, status display, local log display, user choices |
-| `llmwiki-agent-bridge` | Local setup API, runtime/source settings, verification, safe command orchestration |
+| `llmwiki-chat` | Implemented: Quickstart panel, browser/process boundary copy, copyable commands, existing source/runtime probe actions, local log display, user choices. Future: calls to a trusted local setup API. |
+| `llmwiki-agent-bridge` | Implemented: external A2A-style bridge runtime and bridge-managed source discovery when already running. Future: local setup API, runtime/source settings, verification, safe command orchestration. |
 | `llmwiki-serve` | Serve selected wiki source, expose source bundle/query/graph endpoints |
 | Hermes / DeepAgents / vLLM | Runtime execution, native history/prompt/prefix cache |
 
-`llmwiki-chat` must not directly run arbitrary shell commands. It should call a
-local-only setup surface exposed by a trusted helper.
+`llmwiki-chat` must not directly run arbitrary shell commands. Future managed
+automation should call a local-only setup surface exposed by a trusted helper.
 
-## Proposed Local Setup API
+## Future Local Setup API
 
 Future API surface on `llmwiki-agent-bridge`:
 
@@ -77,13 +106,14 @@ POST /quickstart/stop-managed
 The API should only be enabled for local/private operation and should return
 redacted diagnostics.
 
-## MVP Scope
+## Implemented MVP Scope
 
-MVP avoids installer automation. It only reuses installed tools and provides a
-reliable local path:
+The implemented MVP avoids installer automation. It only reuses installed tools
+and provides a reliable browser-guided local path:
 
 - detect bridge status,
 - show commands for sample `llmwiki-serve`,
+- show the package command for `llmwiki-agent-bridge@0.1.0`,
 - test the selected sample source,
 - test the local bridge when it is running,
 - let the user switch to Local Development Runtime for deterministic UI checks,
@@ -114,9 +144,10 @@ After MVP:
 - Provide stop/retry/reconfigure controls.
 - Persist only safe settings and source descriptors.
 
-## Verification Requirements
+## Future Managed Success Criteria
 
-Quickstart is successful only when all checks pass:
+The following are future managed quickstart success criteria, not current
+browser-safe MVP claims:
 
 1. bridge `/health` returns ready runtime/source status,
 2. serve `/health` and `/source-bundle` return valid metadata,
@@ -127,14 +158,19 @@ Quickstart is successful only when all checks pass:
 
 ## Implementation Sequence
 
+Implemented:
+
 1. Add `llmwiki-chat` Quickstart panel using existing source/runtime discovery.
 2. Add sample source reuse/test support.
 3. Add e2e matrix coverage for local, global, graph, and multi-source flows.
-4. Add read-only quickstart status API to `llmwiki-agent-bridge`.
-5. Add managed sample source start/reuse support after the setup API exists.
-6. Add user wiki path support.
-7. Add optional Hermes/DeepAgents install/start flows.
-8. Add cache/metrics visibility for runtime prefix cache and bridge/serve cache.
+
+Future:
+
+1. Add read-only quickstart status API to `llmwiki-agent-bridge`.
+2. Add managed sample source start/reuse support after the setup API exists.
+3. Add user wiki path support.
+4. Add optional Hermes/DeepAgents install/start flows.
+5. Add cache/metrics visibility for runtime prefix cache and bridge/serve cache.
 
 ## Open Questions
 

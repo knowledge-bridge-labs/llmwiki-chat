@@ -146,11 +146,11 @@ current posture.
 
 ## Demo
 
-![LLMWiki Chat workbench connected to the sample wiki](docs/assets/llmwiki-chat-workbench.png)
+![LLMWiki Chat browser-safe first-run Quickstart panel](docs/assets/llmwiki-chat-workbench.png)
 
-The screenshot shows the workbench connected to the bundled sample wiki through
-`llmwiki-serve`, with the local development runtime selected and graph context
-loaded for inspection before asking.
+The screenshot shows the current browser-safe first-run Quickstart panel with
+sanitized loopback sample values. It does not show a connected production
+runtime, private Knowledge Source, or managed backend automation.
 
 ## Workbench Modes
 
@@ -177,15 +177,23 @@ targets.
 | `llmwiki-docs` | Cross-repo documentation portal. | You need the quickstart, protocol map, deployment posture, and release checklist in one place. | `npm run check` |
 
 Use `llmwiki-agent-bridge` when an OpenAI-compatible local runtime should sit
-behind an A2A-style endpoint for `llmwiki-chat`. From a sibling checkout, or
-after npm publication with `npm exec --package llmwiki-agent-bridge --`, set
-`LLMWIKI_AGENT_BRIDGE_BASE_URL`, `LLMWIKI_AGENT_BRIDGE_MODEL`, and
-`LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE` (`hermes`, `deepagents`, or `generic`).
-Use `LLMWIKI_AGENT_BRIDGE_SOURCE_POLICY` and
-`LLMWIKI_AGENT_BRIDGE_ALLOWED_SOURCE_ORIGINS` to control which Knowledge Source
-origins the bridge may fetch. If the bridge requires callers to authenticate,
-set `LLMWIKI_AGENT_BRIDGE_BEARER_TOKEN` in the bridge process and enter that
-runtime bearer token in the `llmwiki-chat` runtime setup panel.
+behind an A2A-style endpoint for `llmwiki-chat`. The public-preview bridge
+package is `llmwiki-agent-bridge@0.1.0`:
+
+```bash
+LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
+LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
+LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
+npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge
+```
+
+For bridge development or release checks, a sibling source checkout remains
+supported; from that checkout, run `npm ci` and `npm exec -- llmwiki-agent-bridge`
+with the same environment variables. Use `LLMWIKI_AGENT_BRIDGE_SOURCE_POLICY`
+and `LLMWIKI_AGENT_BRIDGE_ALLOWED_SOURCE_ORIGINS` to control which Knowledge
+Source origins the bridge may fetch. If the bridge requires callers to
+authenticate, set `LLMWIKI_AGENT_BRIDGE_BEARER_TOKEN` in the bridge process and
+enter that runtime bearer token in the `llmwiki-chat` runtime setup panel.
 
 ## What It Does
 
@@ -229,16 +237,19 @@ display.
 
 ## Package Artifact
 
-Source checkout usage is the supported path until the first npm publication.
-When published, the npm package is intended as a release artifact for downstream
-static hosting and documentation review. It contains the built browser app under
-`dist/`, public docs, package metadata, retained third-party license texts, and
-community governance files. It does not include a bridge binary, embedded bridge
-implementation, hosted service, model runtime, or production web server.
+`llmwiki-chat@0.1.0` is published on npm. The npm package is a static
+distribution artifact for downstream static hosting and documentation review.
+It contains the built browser app under `dist/`, public docs, package metadata,
+retained third-party license texts, and community governance files. It does not
+include a bridge binary, embedded bridge implementation, hosted service, model
+runtime, or production web server.
 
-After npm publication, consumers can unpack the package and host the static
-`dist/` directory with their preferred web server. Runtime bridge workflows use
-the separate `llmwiki-agent-bridge` checkout or npm package.
+Source checkout usage remains supported for local development and release
+checks. Consumers can unpack the package and host the static `dist/` directory
+with their preferred web server. Runtime bridge workflows use the separate
+`llmwiki-agent-bridge@0.1.0` package with
+`npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge`, or a
+bridge source checkout for bridge development and release checks.
 
 ## Supported Usage Modes
 
