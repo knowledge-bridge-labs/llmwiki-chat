@@ -7,23 +7,28 @@ Last updated: 2026-07-21
 
 ## Implemented Browser-Safe MVP
 
-The current first-run path works from `llmwiki-chat` through one visible
-Quickstart panel. The MVP is browser-guided: it shows safe commands and runs
-source/runtime probes after the user starts local services in a trusted shell.
-It does not install packages, launch local processes, read arbitrary local wiki
-paths, or register sources with a backend helper from browser-only UI code.
+The current first-run path works from `llmwiki-chat` through one opt-in,
+source-first Quickstart panel. The MVP is browser-guided: it shows safe commands
+and runs source/runtime probes after the user starts local services in a trusted
+shell. It does not install packages, launch local processes, read arbitrary
+local wiki paths, or register sources with a backend helper from browser-only UI
+code.
 
 Implemented success means:
 
-1. the Quickstart panel appears in the empty chat state,
+1. the empty chat state shows a compact `Show Quickstart` entry point instead of
+   rendering the full panel by default,
 2. the panel makes the browser/process boundary explicit,
-3. the panel shows copyable commands for `llmwiki-serve` sample usage and
-   `llmwiki-agent-bridge@0.1.0`,
+3. Step 1 shows only `llmwiki-serve` sample usage and source readiness,
 4. the user can test the prefilled local sample source after starting
    `llmwiki-serve`,
-5. the user can test a local bridge after starting `llmwiki-agent-bridge`,
-6. the user can switch to Local Development Runtime for deterministic UI checks,
-7. chat entry is enabled only through the existing source/runtime readiness
+5. Step 2 appears only after source readiness and makes Local Development
+   Runtime / serve-only inspection the default path,
+6. `llmwiki-agent-bridge@0.1.0`, Hermes, DeepAgents, and generic
+   OpenAI-compatible runtime guidance appear only inside optional advanced
+   runtime setup,
+7. missing bridge/runtime setup can be skipped without blocking serve-only use,
+8. chat entry is enabled only through the existing source/runtime readiness
    checks.
 
 ## Future Managed Quickstart Goal
@@ -46,9 +51,11 @@ Implemented MVP flow:
 
 ```text
 Open llmwiki-chat
-→ Read browser-safe Quickstart panel
-→ Start or reuse llmwiki-serve / llmwiki-agent-bridge in a trusted shell
-→ Test sample source, test local bridge, or choose Local Development Runtime
+→ Optionally open Quickstart
+→ Step 1: start or reuse llmwiki-serve in a trusted shell
+→ Test sample source
+→ Step 2: continue serve-only with Local Development Runtime
+→ Optional: expand bridge/runtime setup and test llmwiki-agent-bridge
 → Start chat when existing readiness checks pass
 ```
 
@@ -82,7 +89,7 @@ user confirmation.
 
 | Component | Responsibility |
 |---|---|
-| `llmwiki-chat` | Implemented: Quickstart panel, browser/process boundary copy, copyable commands, existing source/runtime probe actions, local log display, user choices. Future: calls to a trusted local setup API. |
+| `llmwiki-chat` | Implemented: opt-in source-first Quickstart panel, browser/process boundary copy, copyable commands, existing source/runtime probe actions, Local Development Runtime serve-only path, optional bridge/runtime disclosure, local log display, user choices. Future: calls to a trusted local setup API. |
 | `llmwiki-agent-bridge` | Implemented: external A2A-style bridge runtime and bridge-managed source discovery when already running. Future: local setup API, runtime/source settings, verification, safe command orchestration. |
 | `llmwiki-serve` | Serve selected wiki source, expose source bundle/query/graph endpoints |
 | Hermes / DeepAgents / vLLM | Runtime execution, native history/prompt/prefix cache |
@@ -115,8 +122,8 @@ and provides a reliable browser-guided local path:
 - show commands for sample `llmwiki-serve`,
 - show the package command for `llmwiki-agent-bridge@0.1.0`,
 - test the selected sample source,
-- test the local bridge when it is running,
-- let the user switch to Local Development Runtime for deterministic UI checks,
+- reveal serve-only Local Development Runtime continuation after source readiness,
+- show and test the local bridge only from optional advanced setup,
 - enter chat.
 
 ## Follow-Up Scope

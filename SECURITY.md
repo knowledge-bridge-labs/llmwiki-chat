@@ -3,7 +3,7 @@
 ## Supported Versions
 
 Security fixes are applied to the current `main` branch and the latest
-public-preview 0.x release, currently `llmwiki-chat@0.1.0`, unless an advisory
+public-preview 0.x release, currently `llmwiki-chat@0.1.1`, unless an advisory
 or release note says otherwise.
 
 ## Reporting a Vulnerability

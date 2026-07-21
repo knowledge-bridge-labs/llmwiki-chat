@@ -97,6 +97,9 @@ const quickstartSampleServeCommand = [
 const quickstartBridgeCommand = [
   'npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge',
 ]
+const quickstartDocsUrl = 'https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart'
+const runtimeAdapterDocsUrl = 'https://knowledge-bridge-labs.github.io/llmwiki-docs/runtime-adapters'
+const agentBridgeDocsUrl = 'https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge#readme'
 
 const knowledgeSourceStorageKey = 'llmwiki-chat:knowledge-source-connections:v1'
 const agentRuntimeStorageKey = 'llmwiki-chat:agent-runtime-connections:v1'
@@ -614,6 +617,8 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState('')
   const [runGraph, setRunGraph] = useState<RuntimeGraphState | null>(null)
   const [graphMode, setGraphMode] = useState<GraphMode>('selection')
+  const [quickstartEnabled, setQuickstartEnabled] = useState(false)
+  const [inspectorDetailsVisible, setInspectorDetailsVisible] = useState(false)
   const [pageReadCache, setPageReadCache] = useState<Record<string, PageReadCacheEntry>>({})
   const [localIoLoggingEnabled, setLocalIoLoggingEnabled] = useState(loadLocalIoLoggingEnabled)
   const [localIoLogEntries, setLocalIoLogEntries] = useState(() => (
@@ -849,6 +854,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!quickstartEnabled) return
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('quickstart-panel')?.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [quickstartEnabled])
+
+  useEffect(() => {
     const initialSelectedConnections = (initialConnections.current || [])
       .filter((connection) => connection.selected && shouldAutoDiscoverConnection(connection))
     initialSelectedConnections.forEach((connection) => {
@@ -922,6 +935,7 @@ export default function App() {
   }, [])
 
   const revealDetailsPanel = useCallback(() => {
+    setInspectorDetailsVisible(true)
     const reveal = () => {
       const details = document.getElementById('details-panel')
       if (!details) return
@@ -1518,7 +1532,7 @@ export default function App() {
                         onClick={() => selectCitationEvidence(message, citation)}
                         key={citation.id}
                         data-citation-id={citation.id}
-                        aria-pressed={selectedCitation?.id === citation.id && selectedCitationReturnTarget?.messageId === message.id}
+                        aria-pressed={selectedCitation?.id === citation.id && (!selectedCitationReturnTarget || selectedCitationReturnTarget.messageId === message.id)}
                         aria-controls="details-panel"
                       >
                         [{index + 1}] {citation.title}
@@ -1555,15 +1569,33 @@ export default function App() {
                   )
                 })}
               </div>
-              <QuickstartPanel
-                agents={agents}
-                connections={connections}
-                selectedAgent={selectedAgent}
-                runtimeStatus={runtimeStatus}
-                onTestSampleSource={testSampleSourceQuickstart}
-                onTestLocalBridge={testLocalBridgeQuickstart}
-                onUseLocalDevelopmentRuntime={useLocalDevelopmentRuntimeQuickstart}
-              />
+              <div className="quickstart-toggle panel">
+                <div>
+                  <p>Optional setup help</p>
+                  <strong>Need help connecting llmwiki-serve?</strong>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  aria-expanded={quickstartEnabled}
+                  aria-controls="quickstart-panel"
+                  onClick={() => setQuickstartEnabled((enabled) => !enabled)}
+                >
+                  {quickstartEnabled ? 'Hide Quickstart' : 'Show Quickstart'}
+                </button>
+              </div>
+              {quickstartEnabled ? (
+                <QuickstartPanel
+                  agents={agents}
+                  connections={connections}
+                  selectedAgent={selectedAgent}
+                  runtimeStatus={runtimeStatus}
+                  onTestSampleSource={testSampleSourceQuickstart}
+                  onTestLocalBridge={testLocalBridgeQuickstart}
+                  onUseLocalDevelopmentRuntime={useLocalDevelopmentRuntimeQuickstart}
+                  onClose={() => setQuickstartEnabled(false)}
+                />
+              ) : null}
               {suggestedPromptStatusMessage ? (
                 <p id="suggested-prompt-status" className="ask-guidance" aria-live="polite">
                   {suggestedPromptStatusMessage}
@@ -1620,40 +1652,52 @@ export default function App() {
             showSelectionGraph()
             if (!readyConnections.length) focusKnowledgeSources()
           }}
+          detailsVisible={inspectorDetailsVisible}
+          onInspectDetails={() => setInspectorDetailsVisible((visible) => !visible)}
         />
-        <GraphExplorer
-          graph={activeGraph}
-          title={activeGraphMode === 'answer' ? 'Evidence graph' : 'Knowledge map'}
-          emptyTitle="No map loaded yet."
-          emptyDescription="Select and test a Knowledge Source to load page links."
-          selectionPrompt={
-            activeGraphMode === 'answer'
-              ? 'Choose an evidence page to inspect its citation context.'
-              : 'Choose a page in the map to preview its connections.'
-          }
-          selectedNodeId={selectedNodeId}
-          onSelectNode={selectGraphNode}
-        />
-        <NodeList
-          graph={activeGraph}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={selectGraphNode}
-        />
-        <DetailsPanel
-          citation={selectedCitation}
-          graph={activeGraph}
-          sources={activeGraphSources}
-          selectedNodeId={selectedNodeId}
-          pageRead={selectedPageRead}
-          scopeLabel={detailsScopeLabel(activeGraphMode, answerGraphSelectionDiffers)}
-          emptyCopy={
-            activeGraphMode === 'answer'
-              ? 'Choose an evidence page or citation to inspect details.'
-              : 'Choose a page in the map to see its path, links, and source.'
-          }
-          onSelectNode={selectGraphNode}
-          onBackToAnswer={selectedCitationReturnTarget ? () => revealAnswerCitation(selectedCitationReturnTarget) : undefined}
-        />
+        <div
+          className="inspector-expert-panels"
+          id="knowledge-inspector-details"
+          hidden={!inspectorDetailsVisible}
+        >
+          {inspectorDetailsVisible ? (
+            <>
+              <GraphExplorer
+                graph={activeGraph}
+                title={activeGraphMode === 'answer' ? 'Evidence graph' : 'Knowledge map'}
+                emptyTitle="No map loaded yet."
+                emptyDescription="Select and test a Knowledge Source to load page links."
+                selectionPrompt={
+                  activeGraphMode === 'answer'
+                    ? 'Choose an evidence page to inspect its citation context.'
+                    : 'Choose a page in the map to preview its connections.'
+                }
+                selectedNodeId={selectedNodeId}
+                onSelectNode={selectGraphNode}
+              />
+              <NodeList
+                graph={activeGraph}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={selectGraphNode}
+              />
+              <DetailsPanel
+                citation={selectedCitation}
+                graph={activeGraph}
+                sources={activeGraphSources}
+                selectedNodeId={selectedNodeId}
+                pageRead={selectedPageRead}
+                scopeLabel={detailsScopeLabel(activeGraphMode, answerGraphSelectionDiffers)}
+                emptyCopy={
+                  activeGraphMode === 'answer'
+                    ? 'Choose an evidence page or citation to inspect details.'
+                    : 'Choose a page in the map to see its path, links, and source.'
+                }
+                onSelectNode={selectGraphNode}
+                onBackToAnswer={selectedCitationReturnTarget ? () => revealAnswerCitation(selectedCitationReturnTarget) : undefined}
+              />
+            </>
+          ) : null}
+        </div>
         <LocalIoLogPanel
           enabled={localIoLoggingEnabled}
           entries={localIoLogEntries}
@@ -1667,13 +1711,13 @@ export default function App() {
           <strong>LLMWiki Chat</strong>
           <span>Chat with selected LLMWiki sources and inspect grounded evidence</span>
         </div>
-        <AgentRuntimeList agents={agents} onChange={updateAgents} onDiscover={discoverRuntime} />
         <ConnectionList
           connections={connections}
           onChange={updateConnections}
           onDiscover={discover}
           sectionRef={sourceSectionRef}
         />
+        <AgentRuntimeList agents={agents} onChange={updateAgents} onDiscover={discoverRuntime} />
       </aside>
     </main>
   )
@@ -1733,12 +1777,12 @@ function LocalIoLogPanel({
         <span>Local I/O logging</span>
       </label>
       <p>
-        On by default for local debugging. Recent prompts, runtime request payloads, answers, errors, and metadata
-        are stored as bounded JSONL in this browser only. Authorization headers, bearer tokens, API keys, and
-        credential-bearing URL parts are redacted before storage.
+        On by default for local debugging. Stored only in this browser as bounded, redacted JSONL; open the log to copy,
+        export, or clear entries.
       </p>
       {enabled ? (
-        <details className="local-io-log-panel" role="region" aria-label="Local I/O log">
+        <section className="local-io-log-panel" aria-label="Local I/O log">
+        <details className="local-io-log-details">
           <summary className="local-io-log-panel-header">
             <strong>Local I/O log</strong>
             <span>{entries.length ? `${entries.length} retained entr${entries.length === 1 ? 'y' : 'ies'}.` : 'No entries yet.'}</span>
@@ -1815,6 +1859,7 @@ function LocalIoLogPanel({
             ) : null}
           </div>
         </details>
+        </section>
       ) : (
         <p className="local-io-log-disabled">Local I/O logging is off. Stored raw entries were cleared and future turns will not be logged until you re-enable it.</p>
       )}
@@ -1947,6 +1992,7 @@ function QuickstartPanel({
   onTestSampleSource,
   onTestLocalBridge,
   onUseLocalDevelopmentRuntime,
+  onClose,
 }: {
   agents: AgentConnection[]
   connections: Connection[]
@@ -1955,90 +2001,201 @@ function QuickstartPanel({
   onTestSampleSource: () => void
   onTestLocalBridge: () => void
   onUseLocalDevelopmentRuntime: () => void
+  onClose: () => void
 }) {
   const sampleSource = connections.find(isStarterConnection) || connections[0]
   const localBridge = agents.find((agent) => agent.id === 'bridge-a2a')
   const localDevelopmentRuntime = agents.find((agent) => agent.protocol === 'mock-agent')
   const bridgeChecking = localBridge?.status === 'checking'
+  const bridgeError = localBridge?.status === 'error'
   const sourceChecking = sampleSource?.status === 'checking'
+  const bridgeReady = localBridge?.status === 'ready'
+  const sourceReady = sampleSource?.status === 'ready'
+  const selectedRuntimeIsLocalDevelopment = selectedAgent.protocol === 'mock-agent'
+  const [advancedRuntimeOpen, setAdvancedRuntimeOpen] = useState(false)
 
   return (
-    <section className="quickstart-panel panel" aria-label="Quickstart">
+    <section id="quickstart-panel" className="quickstart-panel panel" aria-label="Quickstart" tabIndex={-1}>
       <div className="quickstart-heading">
         <div>
           <p>First-run quickstart</p>
-          <h2>Start services in a shell, then verify them here.</h2>
+          <h2>Step 1: connect llmwiki-serve.</h2>
         </div>
         <span className="scope-chip">browser-safe</span>
       </div>
       <p>
         The browser workbench cannot install packages, start local processes, or
-        read arbitrary wiki paths. Run one of these commands in a trusted local
-        shell, then use the checks below.
+        read arbitrary wiki paths. For a first pass, you only need
+        {' '}<code>llmwiki-serve</code>: chat can verify the source, show evidence,
+        and use the Local Development Runtime for deterministic UI checks.
       </p>
-      <dl className="quickstart-status" aria-label="Quickstart status">
-        <div>
-          <dt>Sample source</dt>
-          <dd>
-            <span className={`status-chip ${sampleSource?.status || 'unknown'}`}>
-              {sampleSource?.status || 'unknown'}
-            </span>
-            <span>{sampleSource?.url || defaultServeUrl()}</span>
-          </dd>
+      <section className="quickstart-step" aria-label="Step 1 source setup">
+        <h3>Get a Knowledge Source working</h3>
+        <p>
+          Start or reuse <code>llmwiki-serve</code>, then test the sample URL.
+          Once it is ready, the Pages, Details, and graph views can inspect the
+          evidence even before you connect any external LLM runtime.
+        </p>
+        <dl className="quickstart-status" aria-label="Quickstart source status">
+          <div>
+            <dt>Sample source</dt>
+            <dd>
+              <span className={`status-chip ${sampleSource?.status || 'unknown'}`}>
+                {sampleSource?.status || 'unknown'}
+              </span>
+              <span>{sampleSource?.url || defaultServeUrl()}</span>
+            </dd>
+          </div>
+        </dl>
+        {!sourceReady ? (
+          <p className="quickstart-guidance">
+            If this check fails or stays unknown, open the llmwiki-serve commands
+            below, start the source in a trusted shell, then test again. You can
+            close Quickstart any time and configure Knowledge Sources manually.
+          </p>
+        ) : null}
+        <div className="quickstart-actions" role="group" aria-label="Quickstart source actions">
+          <button type="button" onClick={onTestSampleSource} disabled={sourceChecking}>
+            {sourceChecking ? 'Testing sample source...' : 'Test sample source'}
+          </button>
+          <button className="secondary-action" type="button" onClick={onClose}>
+            Close Quickstart
+          </button>
         </div>
-        <div>
-          <dt>Local bridge</dt>
-          <dd>
-            <span className={`status-chip ${localBridge?.status || 'unknown'}`}>
-              {localBridge?.status || 'unknown'}
-            </span>
-            <span>{localBridge?.url || 'http://127.0.0.1:8788'}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Selected runtime</dt>
-          <dd>
-            <span className={`status-chip ${runtimeStatus}`}>{runtimeStatus}</span>
-            <span>{runtimeSummaryLabel(selectedAgent, runtimeStatus)}</span>
-          </dd>
-        </div>
-      </dl>
-      <div className="quickstart-actions" role="group" aria-label="Quickstart actions">
-        <button type="button" onClick={onTestSampleSource} disabled={sourceChecking}>
-          {sourceChecking ? 'Testing sample source...' : 'Test sample source'}
-        </button>
-        <button type="button" onClick={onTestLocalBridge} disabled={!localBridge || bridgeChecking}>
-          {bridgeChecking ? 'Testing local bridge...' : 'Test local bridge'}
-        </button>
-        <button
-          className="secondary-action"
-          type="button"
-          onClick={onUseLocalDevelopmentRuntime}
-          disabled={Boolean(localDevelopmentRuntime?.selected)}
-        >
-          Use Local Development Runtime
-        </button>
-      </div>
+      </section>
       <details className="quickstart-command-details">
-        <summary>Show commands</summary>
+        <summary>Show llmwiki-serve commands</summary>
         <div className="quickstart-grid">
           <div>
             <h3>Serve a wiki</h3>
-            <pre className="quickstart-command"><code>{quickstartServeCommand.join('\n')}</code></pre>
+            <pre className="quickstart-command" tabIndex={0} aria-label="Serve a wiki command"><code>{quickstartServeCommand.join('\n')}</code></pre>
             <small>Replace <code>/path/to/wiki</code> with your Markdown, Obsidian, or LLMWiki folder.</small>
           </div>
           <div>
             <h3>Use the bundled sample</h3>
-            <pre className="quickstart-command"><code>{quickstartSampleServeCommand.join('\n')}</code></pre>
+            <pre className="quickstart-command" tabIndex={0} aria-label="Bundled sample command"><code>{quickstartSampleServeCommand.join('\n')}</code></pre>
             <small>Use this when you want a known-good source before trying private content.</small>
-          </div>
-          <div>
-            <h3>Start the local bridge</h3>
-            <pre className="quickstart-command"><code>{quickstartBridgeCommand.join('\n')}</code></pre>
-            <small>Hermes, DeepAgents, or OpenAI-compatible runtimes stay behind the bridge.</small>
           </div>
         </div>
       </details>
+      {sourceReady ? (
+        <section className="quickstart-step" aria-label="Step 2 runtime choice">
+          <div>
+            <p className="quickstart-step-label">Step 2</p>
+            <h3>Choose the default runtime path</h3>
+          </div>
+          <p>
+            Default: use Local Development Runtime. It needs no external LLM
+            endpoint and keeps the source/evidence inspection path unblocked.
+          </p>
+          <dl className="quickstart-status" aria-label="Quickstart runtime status">
+            <div>
+              <dt>Selected runtime</dt>
+              <dd>
+                <span className={`status-chip ${runtimeStatus}`}>{runtimeStatus}</span>
+                <span>{runtimeSummaryLabel(selectedAgent, runtimeStatus)}</span>
+              </dd>
+            </div>
+          </dl>
+          <div className="quickstart-actions" role="group" aria-label="Quickstart runtime actions">
+            <button
+              type="button"
+              onClick={selectedRuntimeIsLocalDevelopment ? onClose : onUseLocalDevelopmentRuntime}
+              disabled={!selectedRuntimeIsLocalDevelopment && !localDevelopmentRuntime}
+            >
+              {selectedRuntimeIsLocalDevelopment ? 'Continue serve-only' : 'Use Local Development Runtime'}
+            </button>
+            <button className="secondary-action" type="button" onClick={onClose}>
+              Finish Quickstart
+            </button>
+          </div>
+          <p className="quickstart-ready-note">
+            {selectedRuntimeIsLocalDevelopment
+              ? 'Serve-only path is ready: ask from the composer or inspect the evidence panels.'
+              : 'No external LLM runtime is required for the default path; select Local Development Runtime to continue serve-only.'}
+          </p>
+          <div className="quickstart-advanced-entry">
+            <div>
+              <strong>Optional: bridge or external LLM runtime</strong>
+              <span>Skip this if you only have llmwiki-serve right now.</span>
+            </div>
+            <button
+              className="secondary-action"
+              type="button"
+              aria-expanded={advancedRuntimeOpen}
+              aria-controls="quickstart-advanced-runtime"
+              onClick={() => setAdvancedRuntimeOpen((open) => !open)}
+            >
+              {advancedRuntimeOpen ? 'Hide optional bridge/runtime steps' : 'Show optional bridge/runtime steps'}
+            </button>
+          </div>
+          {advancedRuntimeOpen ? (
+            <section
+              id="quickstart-advanced-runtime"
+              className="quickstart-advanced-panel"
+              aria-label="Optional bridge runtime steps"
+            >
+              <h3>Optional advanced runtime</h3>
+              <p>
+                {bridgeReady
+                  ? 'Local bridge is ready for a real LLM-backed runtime path.'
+                  : 'No bridge or LLM endpoint? Skip this. To use a real LLM later, install/start llmwiki-agent-bridge, read the docs, then test the bridge here.'}
+              </p>
+              <p className="quickstart-docs">
+                Bridge mode is for Hermes, DeepAgents, or OpenAI-compatible runtimes. Read{' '}
+                <a href={quickstartDocsUrl} target="_blank" rel="noreferrer">Quickstart docs</a>
+                {' '}or{' '}
+                <a href={runtimeAdapterDocsUrl} target="_blank" rel="noreferrer">Runtime adapter notes</a>.
+                For bridge installation details, see the{' '}
+                <a href={agentBridgeDocsUrl} target="_blank" rel="noreferrer">Agent Bridge README</a>.
+              </p>
+              <dl className="quickstart-status" aria-label="Quickstart bridge status">
+                <div>
+                  <dt>Local bridge</dt>
+                  <dd>
+                    <span className={`status-chip ${localBridge?.status || 'unknown'}`}>
+                      {localBridge?.status || 'unknown'}
+                    </span>
+                    <span>{localBridge?.url || 'http://127.0.0.1:8788'}</span>
+                  </dd>
+                </div>
+              </dl>
+              {bridgeError ? (
+                <p className="quickstart-guidance">
+                  Bridge test failed. Start or restart <code>llmwiki-agent-bridge</code>,
+                  confirm <code>http://127.0.0.1:8788</code> is reachable, or
+                  skip/continue serve-only.
+                </p>
+              ) : null}
+              <div className="quickstart-actions" role="group" aria-label="Quickstart bridge actions">
+                <button className="secondary-action" type="button" onClick={onTestLocalBridge} disabled={!localBridge || bridgeChecking}>
+                  {bridgeChecking ? 'Testing local bridge...' : 'Test local bridge'}
+                </button>
+                <button
+                  className="secondary-action"
+                  type="button"
+                  onClick={() => {
+                    onUseLocalDevelopmentRuntime()
+                    onClose()
+                  }}
+                >
+                  Skip and close
+                </button>
+              </div>
+              <details className="quickstart-command-details">
+                <summary>Show bridge command</summary>
+                <div className="quickstart-grid">
+                  <div>
+                    <h3>Optional: start the local bridge</h3>
+                    <pre className="quickstart-command" tabIndex={0} aria-label="Start local bridge command"><code>{quickstartBridgeCommand.join('\n')}</code></pre>
+                    <small>Use this only after you have a real runtime endpoint to put behind the bridge.</small>
+                  </div>
+                </div>
+              </details>
+            </section>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   )
 }
@@ -2812,7 +2969,6 @@ function AgentRuntimeList({
     ? runtimeTemplateId
     : runtimeTemplates[0]?.id || ''
   const selectedAgentReady = selectedAgent?.status === 'ready'
-  const openAddRuntimeByDefault = testingRuntimesOpen && !configuredAgents.length
   const agentCompletionKey = selectedAgentReady
     ? `${selectedAgent.id}:${selectedAgent.protocol}:${selectedAgent.url || ''}:${selectedAgent.settingsUrl || ''}`
     : ''
@@ -2829,6 +2985,13 @@ function AgentRuntimeList({
     || selectedAgent?.status === 'error'
     ? selectedAgent.status
     : 'setup'
+  const toggleSection = () => {
+    const nextOpen = !sectionOpen
+    setSectionState({ open: nextOpen, completionKey: agentCompletionKey })
+    if (nextOpen && selectedAgent && !expandedAgentCardId) {
+      setExpandedAgentCardId(selectedAgent.id)
+    }
+  }
 
   const addRuntime = () => {
     if (!selectedTemplateId) return
@@ -3010,13 +3173,13 @@ function AgentRuntimeList({
   return (
     <SidebarSection
       className="agent-runtime-section"
-      ariaLabel="Agent bridge"
-      title="Agent Bridge"
+      ariaLabel="Agent runtime"
+      title="Agent Runtime"
       summary={selectedAgent ? runtimeSummaryLabel(selectedAgent, selectedAgent.status) : 'No runtime selected'}
       tone={agentSectionTone}
       statusLabel={agentSectionStatus}
       open={sectionOpen}
-      onToggle={() => setSectionState({ open: !sectionOpen, completionKey: agentCompletionKey })}
+      onToggle={toggleSection}
       bodyId="agent-runtime-section-body"
     >
       <p className="sidebar-section-guidance">Choose a runtime. Selected or edited endpoints are checked automatically; use the test button to retry.</p>
@@ -3034,7 +3197,7 @@ function AgentRuntimeList({
         {runtimeTemplates.length ? (
           <details
             className="add-runtime-disclosure"
-            open={addRuntimeOpen || openAddRuntimeByDefault}
+            open={addRuntimeOpen || undefined}
             onToggle={(event) => setAddRuntimeOpen(event.currentTarget.open)}
           >
             <summary>
@@ -3647,6 +3810,8 @@ function KnowledgeMapSummary({
   sourceNames,
   onSelectAnswer,
   onExploreSources,
+  detailsVisible,
+  onInspectDetails,
 }: {
   activeMode: GraphMode
   answerGraphAvailable: boolean
@@ -3658,6 +3823,8 @@ function KnowledgeMapSummary({
   sourceNames: string[]
   onSelectAnswer: () => void
   onExploreSources: () => void
+  detailsVisible: boolean
+  onInspectDetails: () => void
 }) {
   const sourceIntro = selectedKnowledgeSourceIntro(selectedConnections, readyConnections)
   const graphOverview = graphOverviewLabel(graph)
@@ -3702,6 +3869,15 @@ function KnowledgeMapSummary({
           </button>
         </div>
       ) : null}
+      <button
+        type="button"
+        className="map-inspect-action"
+        aria-expanded={detailsVisible}
+        aria-controls="knowledge-inspector-details"
+        onClick={onInspectDetails}
+      >
+        {detailsVisible ? 'Hide map, pages, and details' : 'Inspect map, pages, and details'}
+      </button>
       <p className={`status-line ${statusTone}`} aria-live="polite">
         {statusText}
       </p>
@@ -5254,8 +5430,8 @@ function sourceSummaryEyebrow(selectedConnections: Connection[]): string {
 function askButtonLabel(busy: boolean, selectedConnections: Connection[]): string {
   if (busy) return 'Running agent...'
   if (!selectedConnections.length) return 'Ask selected source'
-  if (selectedConnections.length === 1) return `Ask ${selectedConnections[0].name}`
-  return `Ask ${selectedConnections.length} sources`
+  if (selectedConnections.length === 1) return 'Ask selected source'
+  return 'Ask selected sources'
 }
 
 function readyAskStatusMessage(selectedConnections: Connection[]): string {

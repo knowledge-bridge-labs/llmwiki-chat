@@ -152,18 +152,14 @@ function externalServeEnv(existingUrl, existingUrlList) {
 }
 
 function startServeProcess(serveRoot, sampleRoot, port) {
+  const serveExecutable = resolveServeExecutable(serveRoot)
+  const command = serveExecutable || uvCommand
+  const args = serveExecutable
+    ? serveArgs(sampleRoot, port)
+    : ['run', 'llmwiki-serve', ...serveArgs(sampleRoot, port)]
   const child = spawn(
-    uvCommand,
-    [
-      'run',
-      'llmwiki-serve',
-      'serve',
-      sampleRoot,
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
-    ],
+    command,
+    args,
     {
       cwd: serveRoot,
       detached: process.platform !== 'win32',
@@ -185,6 +181,40 @@ function startServeProcess(serveRoot, sampleRoot, port) {
   })
 
   return child
+}
+
+function resolveServeExecutable(serveRoot) {
+  const candidates = process.platform === 'win32'
+    ? [
+        join(serveRoot, '.venv', 'Scripts', 'llmwiki-serve.exe'),
+        join(serveRoot, '.venv', 'Scripts', 'llmwiki-serve'),
+      ]
+    : [
+        join(serveRoot, '.venv', 'bin', 'llmwiki-serve'),
+      ]
+
+  return candidates.find((candidate) => existsSync(candidate)) || ''
+}
+
+function serveArgs(sampleRoot, port) {
+  return [
+    'serve',
+    sampleRoot,
+    '--host',
+    '127.0.0.1',
+    '--port',
+    String(port),
+    ...serveCorsArgs(),
+  ]
+}
+
+function serveCorsArgs() {
+  return liveChatOrigins().flatMap((origin) => ['--cors-origin', origin])
+}
+
+function liveChatOrigins() {
+  const configured = normalizeUrlList((process.env.LLMWIKI_LIVE_CHAT_ORIGINS || '').split(','))
+  return configured.length ? configured : ['http://127.0.0.1:4173', 'http://localhost:4173']
 }
 
 async function waitForHealth(url, child) {

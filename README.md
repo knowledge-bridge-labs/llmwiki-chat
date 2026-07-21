@@ -23,7 +23,7 @@ provides the browser inspection and review surface.
 
 [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Runtime adapters](docs/agent-runtime-adapters.md) | [Release checklist](docs/release.md) | [Docs portal](https://knowledge-bridge-labs.github.io/llmwiki-docs/) | [Quickstart docs](https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart) | [Release status](https://knowledge-bridge-labs.github.io/llmwiki-docs/status) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Support](SUPPORT.md) | [Changelog](CHANGELOG.md)
 
-> Public-preview note: npm install is available for `llmwiki-chat@0.1.0`.
+> Public-preview note: npm install is available for `llmwiki-chat@0.1.1`.
 > Source checkout remains supported for local development and release checks.
 
 It is not a model server, hosted RAG app, wiki compiler, ingestion pipeline,
@@ -78,28 +78,34 @@ npm run dev
 
 Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 
-1. Start with the Quickstart panel in the empty chat state. The panel shows
-   copyable shell commands for `llmwiki-serve` and `llmwiki-agent-bridge` and
-   makes the browser/process boundary explicit.
-2. Use the prefilled `Local sample LLMWiki` source first. Confirm its URL is
-   `http://127.0.0.1:8765`, then click `Test sample source` or `Test source`.
-3. A ready source loads page, graph, and citation context into the Knowledge
-   map, Pages, and Details panels.
-4. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
+1. The empty chat state stays focused on the selected source and suggested
+   prompts. Open `Show Quickstart` only if you want guided setup help.
+2. Quickstart Step 1 starts with `llmwiki-serve` only. Use the prefilled
+   `Local sample LLMWiki` source first. Confirm its URL is
+   `http://127.0.0.1:8765`, then click `Test sample source`.
+3. If the source check fails, open `Show llmwiki-serve commands`, start the
+   source in a trusted shell, and test again. You can close Quickstart any time
+   and configure Knowledge Sources manually.
+4. A ready source prepares page, graph, and citation context. Open
+   `Inspect map, pages, and details` when you want to review the Graph, Pages,
+   and Details panels.
+5. With only `llmwiki-serve`, choose `Continue serve-only`. The default Local
+   Development Runtime needs no external LLM endpoint, Hermes Agent,
+   DeepAgents install, or bridge. It is for deterministic UI, trace, citation,
+   and graph rendering checks, not answer-quality validation.
+6. To connect another source, open `Add source`, choose `LLMWiki HTTP` or
    `MCP`, enter the endpoint URL, and click `Add`.
-5. Prefer the default Local Agent Bridge A2A or MCP path when
-   `llmwiki-agent-bridge` is running at `http://127.0.0.1:8788`; confirm the
-   bridge URL and click `Test bridge`.
-6. When the bridge is ready, chat discovers the bridge's registered Knowledge
+7. Expand `Show optional bridge/runtime steps` only when you want
+   `llmwiki-agent-bridge`, Hermes, DeepAgents, or an OpenAI-compatible runtime.
+   If no bridge or LLM endpoint is available, skip this section and continue
+   serve-only.
+8. When the bridge is ready, chat discovers the bridge's registered Knowledge
    Sources and shows them as bridge-managed, read-only source cards. Edit those
    sources in the bridge settings page. Keep direct source cards in chat for
    standalone `llmwiki-serve` testing and debugging.
-7. If no bridge is running, switch to `Local Development Runtime` under
-   testing/developer runtime options for deterministic UI, trace, citation, and
-   graph rendering checks. It is not an answer-quality runtime.
-8. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
+9. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
-9. Review the answer, citations, artifacts, and trace before treating the result
+10. Review the answer, citations, artifacts, and trace before treating the result
    as useful.
 
 The Vite command starts only the browser client. It does not start
@@ -139,18 +145,19 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.0`.
+`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.1`.
 Source checkout remains supported for local development and release checks.
 See the [release checklist](docs/release.md) and hosted release status for the
 current posture.
 
 ## Demo
 
-![LLMWiki Chat browser-safe first-run Quickstart panel](docs/assets/llmwiki-chat-workbench.png)
+![LLMWiki Chat source-first Quickstart flow](docs/assets/llmwiki-chat-workbench.png)
 
-The screenshot shows the current browser-safe first-run Quickstart panel with
-sanitized loopback sample values. It does not show a connected production
-runtime, private Knowledge Source, or managed backend automation.
+The screenshot shows the current opt-in, source-first Quickstart flow with the
+inspector still collapsed behind `Inspect map, pages, and details`. It uses
+sanitized loopback sample values and does not show a connected production
+runtime, private Knowledge Source, raw logs, or managed backend automation.
 
 ## Workbench Modes
 
@@ -237,7 +244,7 @@ display.
 
 ## Package Artifact
 
-`llmwiki-chat@0.1.0` is published on npm. The npm package is a static
+`llmwiki-chat@0.1.1` is published on npm. The npm package is a static
 distribution artifact for downstream static hosting and documentation review.
 It contains the built browser app under `dist/`, public docs, package metadata,
 retained third-party license texts, and community governance files. It does not
