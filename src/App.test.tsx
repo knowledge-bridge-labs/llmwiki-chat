@@ -317,6 +317,7 @@ function writeStoredAgents(
     protocol: 'bridge-a2a' | 'bridge-mcp' | 'mock-agent' | 'hermes' | 'deepagents' | 'copilot' | 'custom-a2a'
     url: string
     selected: boolean
+    orchestrationMode?: 'evidence-only' | 'delegated-runtime' | 'hybrid'
   }>,
 ) {
   window.localStorage.setItem(agentRuntimeStorageKey, JSON.stringify({ version: 1, agents }))
@@ -680,6 +681,81 @@ describe('LLMWiki Chat', () => {
     expect(screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ })).not.toBeChecked()
     expect(screen.getByRole('radio', { name: /Local Agent Bridge \(MCP\)/ })).not.toBeChecked()
     expect(within(runtimeCard).getByLabelText('Agent runtime status unavailable')).toBeInTheDocument()
+  })
+
+  it('shows the orchestration mode selector only for Agent Bridge runtimes', async () => {
+    const user = userEvent.setup()
+
+    render(<App />)
+    expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+
+    const bridgeCard = screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }).closest('article')
+    expect(bridgeCard).toBeTruthy()
+    await openRuntimeSetup(user, bridgeCard as HTMLElement)
+    expect(within(bridgeCard as HTMLElement).getByLabelText('Local Agent Bridge (A2A) orchestration mode')).toHaveValue('delegated-runtime')
+
+    const localRuntimeCard = screen.getByRole('radio', { name: /Local Development Runtime/ }).closest('article')
+    expect(localRuntimeCard).toBeTruthy()
+    await openRuntimeSetup(user, localRuntimeCard as HTMLElement)
+    expect(within(localRuntimeCard as HTMLElement).queryByLabelText('Local Development Runtime orchestration mode')).not.toBeInTheDocument()
+
+    const customRuntimeCard = await addRuntime(user, 'Custom A2A')
+    await openRuntimeSetup(user, customRuntimeCard)
+    expect(within(customRuntimeCard).queryByLabelText('Custom A2A orchestration mode')).not.toBeInTheDocument()
+  })
+
+  it('persists the selected bridge orchestration mode and uses it in bridge runs', async () => {
+    const user = userEvent.setup()
+    let bridgeRunBody: Record<string, unknown> | undefined
+    stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8788/.well-known/agent-card.json') {
+        return Response.json({
+          name: 'Local Agent Bridge',
+          description: 'Bridge card',
+          url: '/message:send',
+          settingsUrl: '/settings',
+        })
+      }
+      if (url === 'http://127.0.0.1:8788/message:send') {
+        bridgeRunBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return a2aAgentResultResponse('Hybrid bridge answer.')
+      }
+      return undefined
+    })
+
+    render(<App />)
+    expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+    const bridgeCard = screen.getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }).closest('article')
+    expect(bridgeCard).toBeTruthy()
+
+    await openRuntimeSetup(user, bridgeCard as HTMLElement)
+    await user.selectOptions(
+      within(bridgeCard as HTMLElement).getByLabelText('Local Agent Bridge (A2A) orchestration mode'),
+      'hybrid',
+    )
+    await waitFor(() => {
+      const storedBridge = readStoredAgents().agents.find((agent) => agent.id === 'bridge-a2a')
+      expect(storedBridge).toEqual(expect.objectContaining({
+        orchestrationMode: 'hybrid',
+      }))
+      expect(storedBridge).not.toHaveProperty('bearerToken')
+    })
+
+    await user.click(within(bridgeCard as HTMLElement).getByRole('button', { name: 'Test bridge' }))
+    expect(await within(bridgeCard as HTMLElement).findByLabelText('Agent runtime status ready')).toBeInTheDocument()
+    await user.click(within(bridgeCard as HTMLElement).getByRole('radio', { name: /Local Agent Bridge \(A2A\)/ }))
+    setInputValue(screen.getByLabelText('Question'), 'Use the selected bridge orchestration mode')
+    await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
+
+    const chat = screen.getByRole('region', { name: 'Chat' })
+    expect(await within(chat).findByText('Hybrid bridge answer.')).toBeInTheDocument()
+    expect(bridgeRunBody).toMatchObject({
+      data: {
+        query: 'Use the selected bridge orchestration mode',
+        orchestrationMode: 'hybrid',
+        mode: 'hybrid',
+      },
+    })
   })
 
   it('lets users rename a registered Knowledge Source and keeps that name after discovery', async () => {
@@ -1420,6 +1496,128 @@ describe('LLMWiki Chat', () => {
       return url.endsWith('/read/hot.md')
     })
     expect(hotReadCalls).toHaveLength(1)
+  })
+
+  it('routes bridge-managed page previews through bridge llmwiki_read without fetching the private source', async () => {
+    const user = userEvent.setup()
+    const privateSourceUrl = 'http://10.88.0.5:8765'
+    const bridgeReadBodies: Array<Record<string, unknown>> = []
+    writeSelectedLocalBridgeAgent()
+    const fetchMock = stubFetch(() => Response.json(queryPayload()), async (url, init) => {
+      if (url === 'http://127.0.0.1:8765/manifest') {
+        return new Response('not found', { status: 404 })
+      }
+      if (url === 'http://127.0.0.1:8788/mcp') {
+        const body = JSON.parse(String(init?.body || '{}')) as {
+          id?: string | number
+          params?: { name?: string; arguments?: Record<string, unknown> }
+        }
+        if (body.params?.name === 'llmwiki_read') {
+          bridgeReadBodies.push(body as Record<string, unknown>)
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              structuredContent: {
+                llmwiki_read: {
+                  source: { id: 'bridge-private', name: 'Bridge Private' },
+                  pageId: 'hot.md',
+                  page: {
+                    id: 'hot',
+                    title: 'Bridge Hot',
+                    path: 'hot.md',
+                    markdown: '# Bridge Managed Preview\n\nRead through the bridge policy path.',
+                    source_refs: ['SRC-BRIDGE'],
+                  },
+                },
+              },
+            },
+          })
+        }
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            structuredContent: {
+              llmwiki_sources: {
+                sources: [
+                  {
+                    id: 'bridge-private',
+                    name: 'Bridge Private',
+                    protocol: 'llmwiki-http',
+                    url: privateSourceUrl,
+                    status: 'ready',
+                    selected: true,
+                  },
+                ],
+                readySourceCount: 1,
+              },
+            },
+          },
+        })
+      }
+      if (url === 'http://127.0.0.1:8788/message:send') {
+        return a2aAgentResultResponse('Bridge answer cites [Bridge Hot](#citation-1).', {
+          citations: [
+            {
+              id: 'bridge-private:hot',
+              title: 'Bridge Hot',
+              path: 'hot.md',
+              snippet: 'Bridge evidence.',
+              connectionId: 'bridge:bridge-a2a:bridge-private',
+              sourceRefs: ['SRC-BRIDGE'],
+            },
+          ],
+          graph: {
+            nodes: [
+              { id: 'page:hot', label: 'Bridge Hot', kind: 'topic', path: 'hot.md' },
+              { id: 'source:SRC-BRIDGE', label: 'SRC-BRIDGE', kind: 'source_ref' },
+            ],
+            edges: [
+              { source: 'page:hot', target: 'source:SRC-BRIDGE', relation: 'cites' },
+            ],
+          },
+        })
+      }
+      if (url.startsWith(`${privateSourceUrl}/read/`)) {
+        return new Response('direct private source read should not be used', { status: 599 })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole('checkbox', { name: 'Bridge Private' })).toBeChecked()
+    setInputValue(screen.getByLabelText('Question'), 'Show bridge page details')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: sampleAskButtonName })).toBeEnabled()
+    })
+    await user.click(screen.getByRole('button', { name: sampleAskButtonName }))
+    expect(await within(screen.getByRole('region', { name: 'Chat' })).findByText(/Bridge answer/)).toBeInTheDocument()
+
+    await openInspectorDetails(user)
+    const pages = screen.getByRole('region', { name: 'Pages' })
+    await user.click(within(pages).getByRole('button', { name: /Bridge Hot topic/ }))
+
+    const markdown = await within(screen.getByRole('region', { name: 'Details' })).findByLabelText('Selected page markdown')
+    expect(within(markdown).getByRole('heading', { name: 'Bridge Managed Preview' })).toBeInTheDocument()
+    expect(markdown).toHaveTextContent('Read through the bridge policy path.')
+    expect(bridgeReadBodies).toHaveLength(1)
+    expect(bridgeReadBodies[0]).toMatchObject({
+      method: 'tools/call',
+      params: {
+        name: 'llmwiki_read',
+        arguments: {
+          sourceId: 'bridge-private',
+          pageId: 'hot.md',
+        },
+      },
+    })
+    const privateReadCalls = fetchMock.mock.calls.filter(([input]) => {
+      const url = input instanceof Request ? input.url : String(input)
+      return url.startsWith(`${privateSourceUrl}/read/`)
+    })
+    expect(privateReadCalls).toHaveLength(0)
   })
 
   it('does not render selected page markdown html or images', async () => {

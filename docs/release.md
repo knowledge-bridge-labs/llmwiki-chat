@@ -66,18 +66,29 @@ Before publishing a versioned release:
    failure is a release blocker.
 5. Confirm README, CONTRIBUTING, adapter docs, and issue/PR templates reflect any
    new setup steps, validation expectations, or compatibility limits.
-6. Confirm the release contains no credentials, token caches, private endpoint
+6. If README/docs screenshots changed or the first-run workbench UI changed, run
+   the reproducible docs capture workflow:
+
+   ```bash
+   npm run docs:capture-screenshots
+   npm run docs:check-screenshots
+   ```
+
+   Review `docs/assets/llmwiki-chat-workbench.png` and
+   `docs/assets/llmwiki-chat-quickstart.png` for source-first behavior,
+   sanitized loopback sample values, and absence of private data.
+7. Confirm the release contains no credentials, token caches, private endpoint
    URLs or exports, raw sensitive logs, local environment files, screenshots with
    private infrastructure, or generated artifacts that are not meant to ship.
-7. Confirm package metadata still lists the repository, issue tracker, homepage,
+8. Confirm package metadata still lists the repository, issue tracker, homepage,
    Node/npm baseline, and runtime dependencies accurately.
-8. Run `npm run pack:dry-run` and confirm the package contains only the
+9. Run `npm run pack:dry-run` and confirm the package contains only the
    freshly rebuilt production `dist/` output and public release documents, not
    bridge binaries, bridge implementation scripts, tests, Playwright traces,
    local artifacts, GitHub workflow internals, or private files. Normal
    `npm pack` and `npm publish` run the same clean release build through
    `prepack`; do not publish with lifecycle scripts disabled.
-9. Prepare public release notes from the changelog. Avoid references to private
+10. Prepare public release notes from the changelog. Avoid references to private
    planning, private incidents, or unreleased implementation history.
 
 Before publishing to npm, run the central package-publication gate documented

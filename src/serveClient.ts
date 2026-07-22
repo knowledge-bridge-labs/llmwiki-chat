@@ -210,7 +210,7 @@ export function normalizeGraphPayload(payload: Record<string, unknown>): Knowled
   return { nodes, edges }
 }
 
-function normalizeKnowledgePage(
+export function normalizeKnowledgePage(
   connection: Connection,
   payload: Record<string, unknown>,
   requestedPageId: string,
@@ -226,7 +226,7 @@ function normalizeKnowledgePage(
   const id = readString(payload, 'id') || requestedPageId
   const title = readString(payload, 'title') || id || 'Untitled'
   const path = readString(payload, 'path') || requestedPageId
-  const text = readString(payload, 'text')
+  const text = readString(payload, 'text') || readString(payload, 'markdown') || readString(payload, 'content')
   if (!id || !text) throw new Error(`${label} returned no page content for ${connection.name}.`)
 
   return {

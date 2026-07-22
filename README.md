@@ -103,7 +103,12 @@ Open the Vite URL printed by `npm run dev`, then follow the first-run flow:
 8. When the bridge is ready, chat discovers the bridge's registered Knowledge
    Sources and shows them as bridge-managed, read-only source cards. Edit those
    sources in the bridge settings page. Keep direct source cards in chat for
-   standalone `llmwiki-serve` testing and debugging.
+   standalone `llmwiki-serve` testing and debugging. Bridge runtime transport
+   (`A2A` or `MCP`) is separate from Bridge orchestration mode; use the bridge
+   card selector to choose `evidence-only`, `delegated-runtime`, or `hybrid` per
+   chat runtime configuration. Page/detail previews for bridge-managed sources
+   are read through the bridge MCP `llmwiki_read` tool, so chat does not fetch
+   private bridge-managed source `/read/...` URLs directly from the browser.
 9. Or add `Custom A2A`, enter an external A2A runtime URL, optionally enter a
    bearer token for that runtime, click `Test runtime`, and then ask.
 10. Review the answer, citations, artifacts, and trace before treating the result
@@ -161,6 +166,11 @@ pages, and details`. It uses sanitized loopback sample values and does not show
 a connected production runtime, private Knowledge Source, raw logs, or managed
 backend automation.
 
+Regenerate the README/docs screenshots with `npm run docs:capture-screenshots`.
+The command runs the local Vite app against sanitized sample responses and
+updates `docs/assets/llmwiki-chat-workbench.png` plus the Quickstart-open
+reference image.
+
 ## Workbench Modes
 
 | Mode | Use when | What to verify |
@@ -169,6 +179,14 @@ backend automation.
 | Local Development Runtime | You need deterministic UI, trace, citation, and graph rendering checks. | The local runtime is selected, answer traces render, and no production model quality claim is made. |
 | Custom A2A runtime | You have an externally managed runtime that exposes an A2A-style agent card and `message:send`. | Runtime URL policy passes, `Test runtime` marks it ready, and selected sources are reachable by the runtime or proxy path. |
 | Named runtime slot | You are validating a Hermes or DeepAgents-compatible runtime identity. | The agent card identity matches the selected slot; otherwise use Custom A2A. |
+
+Runtime mode/transport describes how the browser talks to the selected runtime
+(`browser-local`, A2A, MCP, or a named A2A slot). Bridge orchestration mode is a
+bridge-only per-run setting that controls whether `llmwiki-agent-bridge` returns
+source evidence only, delegates to its configured runtime, or uses a hybrid
+strategy. Changing Bridge orchestration mode does not edit bridge-managed
+Knowledge Sources; those remain read-only in chat and are managed from bridge
+settings.
 
 Answer review keeps run details with the assistant answer so the execution path
 does not jump after completion. When a runtime returns structured citation ids
@@ -270,8 +288,9 @@ bridge source checkout for bridge development and release checks.
    through an Agent Runtime adapter. If that runtime is
    `llmwiki-agent-bridge`, chat discovers the bridge's registered Knowledge
    Sources after the bridge is ready and shows them as bridge-managed,
-   read-only source cards. Direct source cards remain available for standalone
-   `llmwiki-serve` testing.
+   read-only source cards. Bridge-managed page previews stay mediated by the
+   bridge MCP `llmwiki_read` tool. Direct source cards remain available for
+   standalone `llmwiki-serve` testing.
 
 Do not treat the mock adapter as the production answer-quality standard. Real
 answer quality belongs to the external runtime and model stack connected through

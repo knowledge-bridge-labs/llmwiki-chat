@@ -882,6 +882,7 @@ dd,
 .connection-card input:not([type]),
 .agent-runtime-card input[type="text"],
 .agent-runtime-card input:not([type]),
+.agent-runtime-card select,
 .add-connection input,
 .add-connection select,
 .add-runtime-body select {
@@ -893,6 +894,11 @@ dd,
   padding: 7px 8px;
   font-size: 13px;
   line-height: 1.35;
+}
+
+.runtime-orchestration-control {
+  display: grid;
+  gap: 4px;
 }
 
 .chat-panel {

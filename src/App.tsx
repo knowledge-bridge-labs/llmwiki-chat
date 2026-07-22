@@ -1,22 +1,22 @@
 import {
-  Children,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  isValidElement,
-  type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react'
-import ReactMarkdown from 'react-markdown'
-import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize'
-import remarkGfm from 'remark-gfm'
 import {
   agentClientFor,
+  bridgeOrchestrationModeFor,
+  bridgeOrchestrationModes,
+  defaultBridgeOrchestrationMode,
   discoverAgentRuntime,
   discoverBridgeKnowledgeSources,
+  readBridgeKnowledgeSourcePage,
   starterAgentConnections,
   type AgentRuntimeRequestLog,
 } from './agents'
@@ -26,6 +26,7 @@ import type {
   AgentProtocol,
   AgentRuntimeMessage,
   AgentStep,
+  BridgeOrchestrationMode,
   ChatMessage,
   Citation,
   Connection,
@@ -48,6 +49,9 @@ import {
 import { isReachablePublicHttpsSourceUrl } from './urlPolicy'
 import './styles.css'
 
+const LazyMarkdownAnswer = lazy(() => import('./MarkdownRenderer').then((module) => ({ default: module.MarkdownAnswer })))
+const LazyPageMarkdown = lazy(() => import('./MarkdownRenderer').then((module) => ({ default: module.PageMarkdown })))
+
 const pageNodeKinds = new Set(['hot', 'index', 'overview', 'topic'])
 const graphMapEdgeLimit = 160
 const pageNodeKindRank = new Map([
@@ -58,20 +62,6 @@ const pageNodeKindRank = new Map([
 ])
 const externalRuntimeSourceUrlAdvisoryMessage = 'Warning: selected ready Knowledge Source URLs include HTTP, private, or non-public hosts. External runtimes may not be able to reach them; public or strict deployments should use public HTTPS sources or enforce runtime/proxy allowlists.'
 const suggestedPrompts = ['What is in this wiki?', 'Show current focus', 'What needs review?'] as const
-const markdownBlockedMediaTags = new Set(['img', 'picture', 'source'])
-const wikiLinkHrefPrefix = '#llmwiki-wikilink/'
-const wikiLinkMarkdownPattern = String.raw`\[\[[^[\]\n]+?\]\]`
-const wikiLinkNavigationLinePattern = new RegExp(
-  String.raw`^\s*${wikiLinkMarkdownPattern}(?:\s*\|\s*${wikiLinkMarkdownPattern})+\s*$`,
-)
-const wikiLinkSeparatorPattern = /^[\s|]+$/
-const markdownSanitizeSchema: RehypeSanitizeOptions = {
-  ...defaultSchema,
-  tagNames: defaultSchema.tagNames?.filter((tagName) => !markdownBlockedMediaTags.has(tagName)),
-  attributes: Object.fromEntries(
-    Object.entries(defaultSchema.attributes || {}).filter(([tagName]) => !markdownBlockedMediaTags.has(tagName)),
-  ),
-}
 
 const starterConnections: Connection[] = [
   {
@@ -125,6 +115,7 @@ interface PersistedAgentConfig {
   url: string
   selected: boolean
   settingsUrl?: string
+  orchestrationMode?: BridgeOrchestrationMode
 }
 
 interface AgentToolCallTrace {
@@ -141,6 +132,7 @@ interface ScopeSourceSnapshot {
   protocol: Protocol
   url: string
   status: Connection['status']
+  bridgeSource?: NonNullable<Connection['bridgeSource']>
 }
 
 interface AnswerScopeSnapshot {
@@ -342,6 +334,9 @@ function mergePersistedAgents(persistedAgents: PersistedAgentConfig[]): AgentCon
       added: Boolean(persisted.added),
       url: persisted.url,
       settingsUrl: persisted.settingsUrl,
+      ...(isBridgeAgent(starter)
+        ? { orchestrationMode: persisted.orchestrationMode || starter.orchestrationMode || defaultBridgeOrchestrationMode }
+        : {}),
       selected: starter.id === selectedAgentId,
       status: agentStatusFromPersistedConfig(starter, persisted),
     }
@@ -431,6 +426,7 @@ function toAgentStorageConfig(agent: AgentConnection): PersistedAgentConfig {
     settingsUrl: agent.settingsUrl || '',
   }
   if (agent.added) config.added = true
+  if (isBridgeAgent(agent)) config.orchestrationMode = bridgeOrchestrationModeFor(agent)
   return config
 }
 
@@ -483,6 +479,9 @@ function toPersistedAgentConfig(value: unknown): PersistedAgentConfig | null {
     url: value.url,
     selected: value.selected,
     settingsUrl: typeof value.settingsUrl === 'string' ? value.settingsUrl : '',
+    orchestrationMode: typeof value.orchestrationMode === 'string' && isPersistedBridgeOrchestrationMode(value.orchestrationMode)
+      ? value.orchestrationMode
+      : undefined,
   }
 }
 
@@ -498,6 +497,10 @@ function isAgentProtocol(value: string): value is AgentProtocol {
     || value === 'deepagents'
     || value === 'copilot'
     || value === 'custom-a2a'
+}
+
+function isPersistedBridgeOrchestrationMode(value: string): value is BridgeOrchestrationMode {
+  return (bridgeOrchestrationModes as readonly string[]).includes(value)
 }
 
 function isBridgeAgent(agent: AgentConnection): boolean {
@@ -736,7 +739,7 @@ export default function App() {
     pageReadRequests.current.add(selectedPageReadRequest.cacheKey)
 
     const controller = new AbortController()
-    void readPageForSource(selectedPageReadRequest.source, selectedPageReadRequest.pageId, controller.signal)
+    void readPageForSource(selectedPageReadRequest.source, selectedPageReadRequest.pageId, agents, controller.signal)
       .then((page) => {
         setPageReadCache((current) => ({
           ...current,
@@ -765,7 +768,7 @@ export default function App() {
       .finally(() => {
         pageReadRequests.current.delete(selectedPageReadRequest.cacheKey)
       })
-  }, [pageReadCache, selectedGraphNode, selectedPageReadRequest])
+  }, [agents, pageReadCache, selectedGraphNode, selectedPageReadRequest])
 
   const discover = useCallback(async (connection: Connection) => {
     const request = createSourceDiscoveryRequest(connection)
@@ -1509,15 +1512,20 @@ export default function App() {
                 {message.role === 'assistant' && message.agentRuntimeStatus === 'running' && !message.text ? (
                   <p className="assistant-pending">Gathering evidence from the selected Knowledge Sources...</p>
                 ) : (
-                  <MarkdownAnswer
-                    text={message.text}
-                    citations={message.citations}
-                    citationReferenceIds={message.citationReferenceIds}
-                    selectedCitationId={selectedCitation?.id || ''}
-                    selectedCitationMessageId={selectedCitationReturnTarget?.messageId || ''}
-                    messageId={message.id}
-                    onSelectCitation={(citation) => selectCitationEvidence(message, citation)}
-                  />
+                  <Suspense fallback={<p className="status-line checking">Loading markdown renderer...</p>}>
+                    <LazyMarkdownAnswer
+                      text={message.text}
+                      citations={message.citations}
+                      citationReferenceIds={message.citationReferenceIds}
+                      selectedCitationId={selectedCitation?.id || ''}
+                      selectedCitationMessageId={selectedCitationReturnTarget?.messageId || ''}
+                      messageId={message.id}
+                      onSelectCitation={(citation) => selectCitationEvidence(message, citation)}
+                      citationForMarkdownReference={citationForMarkdownReference}
+                      citationActionLabel={citationActionLabel}
+                      citationInlineChildren={citationInlineChildren}
+                    />
+                  </Suspense>
                 )}
                 {message.role === 'assistant' && shouldShowUncitedEvidenceNotice(message) ? (
                   <p className="citation-mapping-note">
@@ -2374,7 +2382,14 @@ function connectionsForSelectedAgent(connections: Connection[], agent: AgentConn
 function runScopeKey(agents: AgentConnection[], connections: Connection[]): string {
   const agent = selectedAgentFromList(agents)
   const runtimeKey = agent
-    ? ['runtime', agent.id, agent.protocol, scopeUrlKey(agent.url || ''), agent.bearerToken || ''].join('\u0001')
+    ? [
+        'runtime',
+        agent.id,
+        agent.protocol,
+        scopeUrlKey(agent.url || ''),
+        agent.bearerToken || '',
+        isBridgeAgent(agent) ? bridgeOrchestrationModeFor(agent) : '',
+      ].join('\u0001')
     : 'runtime'
   const sourceKeys = connections
     .filter((connection) => connection.selected)
@@ -2473,55 +2488,6 @@ function invalidateChangedRuntimeRequests(
       requests.delete(agent.id)
     }
   })
-}
-
-function MarkdownAnswer({
-  text,
-  citations,
-  citationReferenceIds = [],
-  selectedCitationId,
-  selectedCitationMessageId,
-  messageId,
-  onSelectCitation,
-}: {
-  text: string
-  citations: Citation[]
-  citationReferenceIds?: string[]
-  selectedCitationId: string
-  selectedCitationMessageId: string
-  messageId: string
-  onSelectCitation: (citation: Citation) => void
-}) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[[rehypeSanitize, markdownSanitizeSchema]]}
-      components={{
-        a({ href, children, node, ...props }) {
-          void node
-          const citation = citationForMarkdownReference(href, children, citations, citationReferenceIds)
-          if (citation) {
-            return (
-              <button
-                type="button"
-                className="inline-citation"
-                data-citation-id={citation.id}
-                aria-label={citationActionLabel(citation, citations)}
-                aria-controls="details-panel"
-                aria-pressed={selectedCitationId === citation.id && (!selectedCitationMessageId || selectedCitationMessageId === messageId)}
-                onClick={() => onSelectCitation(citation)}
-              >
-                {citationInlineChildren(children, citation, citations)}
-              </button>
-            )
-          }
-          return <a href={href} {...props}>{children}</a>
-        },
-      }}
-    >
-      {text}
-    </ReactMarkdown>
-  )
 }
 
 function DiagnosticDetails({
@@ -3125,6 +3091,27 @@ function AgentRuntimeList({
                 />
                 {agent.bearerToken?.trim() ? (
                   <small className="runtime-secret-status">Bearer token set for this tab only.</small>
+                ) : null}
+                {isBridgeAgent(agent) ? (
+                  <label className="runtime-orchestration-control">
+                    Bridge orchestration mode
+                    <select
+                      aria-label={`${agent.name} orchestration mode`}
+                      value={bridgeOrchestrationModeFor(agent)}
+                      onChange={(event) =>
+                        updateAgent(agent.id, { orchestrationMode: event.target.value as BridgeOrchestrationMode })
+                      }
+                    >
+                      {bridgeOrchestrationModes.map((mode) => (
+                        <option value={mode} key={mode}>
+                          {bridgeOrchestrationModeLabel(mode)}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      Controls how Agent Bridge handles evidence and runtime delegation for each run. This is separate from A2A/MCP transport.
+                    </small>
+                  </label>
                 ) : null}
                 {agent.error ? <p className="error">{agent.error}</p> : null}
                 <DiagnosticDetails diagnostic={agent.diagnostic} label="Runtime diagnostic" openByDefault={agent.status === 'error'} />
@@ -3946,7 +3933,15 @@ function DetailsPanel({
           ) : (
             <NodeMetadata node={selectedNode} source={selectedNodeSource} />
           )}
-          {isPageNode(selectedNode) ? <PageMarkdown pageRead={pageRead} graph={graph} onSelectNode={onSelectNode} /> : null}
+          {isPageNode(selectedNode) ? (
+            <Suspense fallback={<p className="status-line checking">Loading markdown renderer...</p>}>
+              <LazyPageMarkdown
+                pageRead={pageRead}
+                resolveWikiTarget={(target) => pageNodeForWikiTarget(graph, target)?.id || null}
+                onSelectNode={onSelectNode}
+              />
+            </Suspense>
+          ) : null}
           {hasRelatedDetails ? (
             <details className="detail-disclosure detail-related-disclosure" open={!citation}>
               <summary>Related context</summary>
@@ -3976,171 +3971,6 @@ function DetailsPanel({
       )}
     </section>
   )
-}
-
-function PageMarkdown({
-  pageRead,
-  graph,
-  onSelectNode,
-}: {
-  pageRead: PageReadCacheEntry | null
-  graph: KnowledgeGraph
-  onSelectNode: (nodeId: string) => void
-}) {
-  if (!pageRead) return null
-
-  const displayMarkdown = pageMarkdownForDisplay(pageRead.markdown)
-
-  return (
-    <article className="page-markdown-card" aria-label="Selected page markdown">
-      <div className="page-markdown-heading">
-        <strong>Rendered page</strong>
-        {pageRead.path ? <span>{pageRead.path}</span> : null}
-      </div>
-      {pageRead.status === 'loading' ? (
-        <p className="status-line checking">Loading full markdown...</p>
-      ) : pageRead.status === 'error' ? (
-        <p className="status-line error">{pageRead.error || 'Could not load page markdown.'}</p>
-      ) : pageRead.markdown.trim() ? (
-        <div className="page-markdown-body">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[[rehypeSanitize, markdownSanitizeSchema]]}
-            skipHtml
-            components={{
-              p({ children, node, ...props }) {
-                void node
-                const rowChildren = wikiLinkRowChildren(children)
-                if (rowChildren) {
-                  return (
-                    <nav className="wiki-link-row" aria-label="Page links">
-                      {rowChildren}
-                    </nav>
-                  )
-                }
-                return <p {...props}>{children}</p>
-              },
-              a({ href, children, node, ...props }) {
-                void node
-                const wikiTarget = wikiTargetFromHref(href)
-                if (!wikiTarget) return <a href={href} {...props}>{children}</a>
-
-                const targetNode = pageNodeForWikiTarget(graph, wikiTarget)
-                if (!targetNode) {
-                  return (
-                    <span className="wiki-link" title={wikiTarget} data-wiki-link="true">
-                      {children}
-                    </span>
-                  )
-                }
-
-                return (
-                  <button
-                    type="button"
-                    className="wiki-link wiki-link-button"
-                    title={wikiTarget}
-                    data-wiki-link="true"
-                    aria-controls="details-panel"
-                    onClick={() => onSelectNode(targetNode.id)}
-                  >
-                    {children}
-                  </button>
-                )
-              },
-            }}
-          >
-            {displayMarkdown}
-          </ReactMarkdown>
-        </div>
-      ) : (
-        <p className="status-line blocked">No markdown was returned for this page.</p>
-      )}
-    </article>
-  )
-}
-
-function pageMarkdownForDisplay(markdown: string): string {
-  let inFence = false
-  return markdown
-    .split('\n')
-    .map((line) => {
-      if (/^\s*(?:```|~~~)/.test(line)) {
-        inFence = !inFence
-        return line
-      }
-      if (inFence) return line
-      const displayLine = line
-        .split(/(`[^`]*`)/g)
-        .map((segment) => segment.startsWith('`') ? segment : replaceWikiLinks(segment))
-        .join('')
-      return wikiLinkNavigationLinePattern.test(line) ? `\n${displayLine}\n` : displayLine
-    })
-    .join('\n')
-}
-
-function replaceWikiLinks(value: string): string {
-  return value.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, rawInner: string) => {
-    const link = parseWikiLink(rawInner)
-    if (!link.target) return rawInner
-    return `[${escapeMarkdownLinkText(link.label)}](${wikiLinkHref(link.target)})`
-  })
-}
-
-function parseWikiLink(rawInner: string): { target: string; label: string } {
-  const [rawTarget = '', rawLabel = ''] = rawInner.split('|')
-  const target = rawTarget.trim()
-  const label = rawLabel.trim() || wikiLinkDefaultLabel(target)
-  return { target, label }
-}
-
-function wikiLinkDefaultLabel(target: string): string {
-  const withoutHeading = target.split('#').filter(Boolean).at(-1) || target
-  const basename = withoutHeading.split(/[\\/]/).filter(Boolean).at(-1) || withoutHeading
-  return basename.trim() || target
-}
-
-function escapeMarkdownLinkText(value: string): string {
-  return value.replace(/([\\[\]])/g, '\\$1')
-}
-
-function wikiLinkHref(target: string): string {
-  return `${wikiLinkHrefPrefix}${encodeURIComponent(target)}`
-}
-
-function wikiTargetFromHref(href: string | undefined): string {
-  if (!href?.startsWith(wikiLinkHrefPrefix)) return ''
-  try {
-    return decodeURIComponent(href.slice(wikiLinkHrefPrefix.length))
-  } catch {
-    return href.slice(wikiLinkHrefPrefix.length)
-  }
-}
-
-type WikiLinkElementProps = {
-  'data-wiki-link'?: string
-  href?: string
-}
-
-function wikiLinkRowChildren(children: ReactNode): ReactNode[] | null {
-  const childItems = Children.toArray(children)
-  const rowChildren: ReactNode[] = []
-
-  for (const child of childItems) {
-    if (isWikiLinkElement(child)) {
-      rowChildren.push(child)
-      continue
-    }
-
-    if (typeof child === 'string' && wikiLinkSeparatorPattern.test(child)) continue
-    return null
-  }
-
-  return rowChildren.length >= 2 ? rowChildren : null
-}
-
-function isWikiLinkElement(child: ReactNode): child is ReactElement<WikiLinkElementProps> {
-  if (!isValidElement<WikiLinkElementProps>(child)) return false
-  return child.props['data-wiki-link'] === 'true' || Boolean(child.props.href?.startsWith(wikiLinkHrefPrefix))
 }
 
 function pageNodeForWikiTarget(
@@ -4616,6 +4446,7 @@ function sourceScopeSnapshot(connection: Connection): ScopeSourceSnapshot {
     protocol: connection.protocol,
     url: connection.url,
     status: connection.status,
+    ...(connection.bridgeSource ? { bridgeSource: connection.bridgeSource } : {}),
   }
 }
 
@@ -4640,7 +4471,10 @@ function pageReadIdForNode(node: KnowledgeGraph['nodes'][number]): string {
 }
 
 function pageReadCacheKey(source: ScopeSourceSnapshot, pageId: string): string {
-  return [source.id, source.protocol, source.url, pageId].join('\u0001')
+  const bridgeKey = source.bridgeSource
+    ? `${source.bridgeSource.agentId}:${source.bridgeSource.sourceId}`
+    : ''
+  return [source.id, source.protocol, source.url, bridgeKey, pageId].join('\u0001')
 }
 
 function loadingPageReadEntry(node: KnowledgeGraph['nodes'][number]): PageReadCacheEntry {
@@ -4656,8 +4490,29 @@ function loadingPageReadEntry(node: KnowledgeGraph['nodes'][number]): PageReadCa
 async function readPageForSource(
   source: ScopeSourceSnapshot,
   pageId: string,
+  agents: AgentConnection[],
   signal?: AbortSignal,
 ): Promise<KnowledgePage> {
+  if (source.bridgeSource) {
+    const bridgeAgent = agents.find((agent) => agent.id === source.bridgeSource?.agentId && isBridgeAgent(agent))
+    if (!bridgeAgent) {
+      throw new Error(
+        `Cannot preview ${source.name}: owning bridge runtime ${source.bridgeSource.agentName} is not available. Test or reselect that bridge, then try again.`,
+      )
+    }
+    if (bridgeAgent.status !== 'ready') {
+      throw new Error(
+        `Cannot preview ${source.name}: owning bridge runtime ${bridgeAgent.name} is ${bridgeAgent.status}. Test the bridge, then try again.`,
+      )
+    }
+    if (!bridgeAgent.url?.trim()) {
+      throw new Error(
+        `Cannot preview ${source.name}: owning bridge runtime ${bridgeAgent.name} has no bridge URL. Configure and test the bridge, then try again.`,
+      )
+    }
+    return readBridgeKnowledgeSourcePage(bridgeAgent, source.bridgeSource.sourceId, pageId, signal)
+  }
+
   const connection = connectionFromScopeSource(source)
   if (!connection.url.trim()) {
     throw new Error(`No endpoint URL is available for ${source.name}.`)
@@ -5514,6 +5369,12 @@ function sourceEndpointSummary(connection: Connection): string {
 
 function runtimeProtocolLabel(agent: AgentConnection): string {
   return agent.protocol === 'mock-agent' ? 'browser-local' : agent.protocol
+}
+
+function bridgeOrchestrationModeLabel(mode: BridgeOrchestrationMode): string {
+  if (mode === 'evidence-only') return 'Evidence only'
+  if (mode === 'hybrid') return 'Hybrid'
+  return 'Delegated runtime (default)'
 }
 
 function runtimeSummaryLabel(agent: AgentConnection, status: RuntimeStatus): string {

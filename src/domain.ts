@@ -7,6 +7,7 @@ export type AgentProtocol =
   | 'deepagents'
   | 'copilot'
   | 'custom-a2a'
+export type BridgeOrchestrationMode = 'evidence-only' | 'delegated-runtime' | 'hybrid'
 export type AgentRuntimeStatus = 'unknown' | 'checking' | 'ready' | 'unavailable' | 'error'
 export type AgentStepStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -92,6 +93,7 @@ export interface AgentConnection {
   bearerToken?: string
   settingsUrl?: string
   bridge?: AgentBridgeMetadata
+  orchestrationMode?: BridgeOrchestrationMode
   selected: boolean
   status: AgentRuntimeStatus
   description?: string
