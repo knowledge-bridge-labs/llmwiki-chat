@@ -706,6 +706,7 @@ describe('LLMWiki Chat', () => {
 
   it('persists the selected bridge orchestration mode and uses it in bridge runs', async () => {
     const user = userEvent.setup()
+    await import('./MarkdownRenderer')
     let bridgeRunBody: Record<string, unknown> | undefined
     stubFetch(() => Response.json(queryPayload()), async (url, init) => {
       if (url === 'http://127.0.0.1:8788/.well-known/agent-card.json') {
@@ -2024,6 +2025,160 @@ describe('LLMWiki Chat', () => {
 
     await user.click(within(sources).getByText('Source details'))
     expect(sourceDetails).toHaveAttribute('open')
+  })
+
+  it('omits projection cache details when an older serve endpoint has no diagnostics route', async () => {
+    render(<App />)
+    expect((await screen.findAllByText('Sample Wiki')).length).toBeGreaterThan(0)
+
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const sourceCard = within(sources).getByText('Sample Wiki').closest('article')
+    expect(sourceCard).toBeTruthy()
+    expect(within(sourceCard as HTMLElement).getByLabelText('Connection status ready')).toBeInTheDocument()
+    expect(within(sourceCard as HTMLElement).queryByText(/Projection cache:/)).not.toBeInTheDocument()
+  })
+
+  it('shows memory projection cache diagnostics on a direct serve source card', async () => {
+    stubFetch(() => Response.json(queryPayload()), (url) => {
+      if (url.endsWith('/diagnostics/projection-store')) {
+        return Response.json({
+          backend: 'InMemoryProjectionStore',
+          backend_kind: 'memory',
+          available: true,
+          endpoint: null,
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    expect(await screen.findByText('Projection cache: memory')).toBeInTheDocument()
+  })
+
+  it('shows Redis projection cache diagnostics with namespace and sanitized endpoint on a direct serve source card', async () => {
+    stubFetch(() => Response.json(queryPayload()), (url) => {
+      if (url.endsWith('/diagnostics/projection-store')) {
+        return Response.json({
+          backend: 'RedisProjectionStore',
+          backend_kind: 'redis',
+          namespace: 'owner-test-redis-021',
+          cache_source_id: 'sample-owner-test',
+          available: true,
+          last_error: '',
+          endpoint: 'redis://127.0.0.1:16379/15',
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    expect(await screen.findByText(
+      'Projection cache: Redis (namespace owner-test-redis-021 · endpoint redis://127.0.0.1:16379/15)',
+    )).toBeInTheDocument()
+  })
+
+  it('omits unsafe projection cache endpoints from a direct serve source card', async () => {
+    stubFetch(() => Response.json(queryPayload()), (url) => {
+      if (url.endsWith('/diagnostics/projection-store')) {
+        return Response.json({
+          backend: 'RedisProjectionStore',
+          backend_kind: 'redis',
+          namespace: 'owner-test-redis-021',
+          available: true,
+          endpoint: 'redis://diagnostics-user:password-secret@redis.example.invalid:6380/2?token=query-token-secret',
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    const sourceCard = (await within(sources).findByText('Projection cache: Redis (namespace owner-test-redis-021)')).closest('article')
+    expect(sourceCard).toBeTruthy()
+    expect(within(sourceCard as HTMLElement).queryByText(/endpoint/)).not.toBeInTheDocument()
+    expect(within(sourceCard as HTMLElement).queryByText(/password-secret/)).not.toBeInTheDocument()
+    expect(within(sourceCard as HTMLElement).queryByText(/query-token-secret/)).not.toBeInTheDocument()
+  })
+
+  it('shows unavailable Redis projection cache diagnostics without guessing a missing endpoint', async () => {
+    stubFetch(() => Response.json(queryPayload()), (url) => {
+      if (url.endsWith('/diagnostics/projection-store')) {
+        return Response.json({
+          backend: 'RedisProjectionStore',
+          backend_kind: 'redis',
+          namespace: 'owner-test-redis-021',
+          available: false,
+          last_error: 'Redis connection refused',
+          endpoint: null,
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    const cacheLine = await screen.findByText(
+      'Projection cache: Redis unavailable: Redis connection refused (namespace owner-test-redis-021)',
+    )
+    expect(cacheLine).toBeInTheDocument()
+    expect(cacheLine).not.toHaveTextContent('endpoint')
+  })
+
+  it('clears stale projection cache diagnostics while retesting and after source failure', async () => {
+    const user = userEvent.setup()
+    const retryManifest = deferredResponse()
+    let manifestCalls = 0
+    stubFetch(() => Response.json(queryPayload()), (url) => {
+      if (url.endsWith('/manifest')) {
+        manifestCalls += 1
+        if (manifestCalls === 1) {
+          return Response.json({
+            title: 'Sample Wiki',
+            description: 'Demo',
+            adapter: 'llmwiki-markdown',
+            implementation: 'atomicstrata/llm-wiki-compiler',
+            page_count: 3,
+            approved_page_count: 2,
+          })
+        }
+        return retryManifest.promise
+      }
+      if (url.endsWith('/diagnostics/projection-store')) {
+        return Response.json({
+          backend: 'RedisProjectionStore',
+          backend_kind: 'redis',
+          namespace: 'owner-test-redis-021',
+          available: true,
+          endpoint: 'redis://127.0.0.1:16379/15',
+        })
+      }
+      return undefined
+    })
+
+    render(<App />)
+
+    const sources = screen.getByRole('region', { name: 'Knowledge sources' })
+    expect(await within(sources).findByText(
+      'Projection cache: Redis (namespace owner-test-redis-021 · endpoint redis://127.0.0.1:16379/15)',
+    )).toBeInTheDocument()
+    const sourceCard = within(sources).getByText('Sample Wiki').closest('article')
+    expect(sourceCard).toBeTruthy()
+
+    await user.click(within(sourceCard as HTMLElement).getByText('Source setup'))
+    await user.click(within(sourceCard as HTMLElement).getByRole('button', { name: 'Test source' }))
+
+    await waitFor(() => {
+      expect(within(sourceCard as HTMLElement).queryByText(/Projection cache:/)).not.toBeInTheDocument()
+    })
+    expect(within(sourceCard as HTMLElement).getByLabelText('Connection status checking')).toBeInTheDocument()
+
+    retryManifest.resolve(new Response('source unavailable', { status: 503 }))
+
+    expect(await within(sourceCard as HTMLElement).findByLabelText('Connection status error')).toBeInTheDocument()
+    expect(within(sourceCard as HTMLElement).queryByText(/Projection cache:/)).not.toBeInTheDocument()
   })
 
   it('does not restore source selection from a late source test response', async () => {

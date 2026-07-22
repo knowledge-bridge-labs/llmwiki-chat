@@ -9,6 +9,17 @@ begin. Dates use `YYYY-MM-DD`.
 
 - _No changes yet._
 
+## 0.1.4 - 2026-07-22
+
+- Added projection-cache diagnostics to direct `llmwiki-serve` source cards so
+  operators can see whether a source is using memory or Redis-backed projection
+  storage.
+- Display Redis projection endpoints as sanitized labels from `llmwiki-serve`,
+  omitting credentials, userinfo, query strings, fragments, local paths, raw
+  keys, and payload values.
+- Hardened diagnostics regression coverage and release checks for the `0.1.4`
+  npm patch release.
+
 ## 0.1.3 - 2026-07-22
 
 - Removed stale fixed-version README references from the npm package page so

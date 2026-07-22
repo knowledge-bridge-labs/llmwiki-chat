@@ -52,6 +52,16 @@ export interface BridgeSourceRegistration {
   sourceId: string
 }
 
+export interface ProjectionStoreDiagnostics {
+  backend?: string
+  backendKind?: string
+  namespace?: string
+  cacheSourceId?: string
+  available?: boolean
+  lastError?: string
+  endpoint?: string
+}
+
 export interface Connection {
   id: string
   name: string
@@ -70,6 +80,7 @@ export interface Connection {
   latencyMs?: number
   error?: string
   diagnostic?: Diagnostic
+  projectionStore?: ProjectionStoreDiagnostics
   sourceOrigin?: 'direct' | 'bridge'
   bridgeSource?: BridgeSourceRegistration
   readOnly?: boolean

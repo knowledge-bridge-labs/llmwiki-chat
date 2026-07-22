@@ -151,7 +151,7 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.3`.
+`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.4`.
 Source checkout remains supported for local development and release checks.
 See the [release checklist](docs/release.md) and hosted release status for the
 current posture.
@@ -227,9 +227,14 @@ enter that runtime bearer token in the `llmwiki-chat` runtime setup panel.
 | Need | Use `llmwiki-chat` for | Use something else for |
 | --- | --- | --- |
 | Source setup | Add and test direct HTTP and MCP-style JSON-RPC Knowledge Source endpoints, or inspect bridge-managed source cards discovered from a ready Agent Bridge. Treat A2A-style source endpoints as advanced/non-default until the picker supports them. | Compiling, crawling, embedding, hosting wiki content, or editing bridge-owned source registration. |
-| Source inspection | Browse pages, graph context, source refs, and citation targets before asking. | Long-term knowledge management or source authoring. |
+| Source inspection | Browse pages, graph context, source refs, citation targets, and direct `llmwiki-serve` projection-cache status before asking. | Long-term knowledge management or source authoring. |
 | Runtime selection | Choose `Local Development Runtime`, `Custom A2A`, or a named A2A runtime slot. | Running the model stack, planner, tools, or production runtime service. |
 | Answer review | Inspect citations, artifacts, and trace steps behind a runtime response. | Judging production answer quality without a real external runtime. |
+
+Direct `llmwiki-serve` source cards can show projection-cache diagnostics when
+the server exposes them. Memory-backed sources show `memory`; Redis-backed
+sources show a sanitized endpoint label from the server, with credentials,
+userinfo, query strings, fragments, local paths, raw keys, and payloads omitted.
 
 ## Repository Structure
 

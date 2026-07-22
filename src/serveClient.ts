@@ -7,6 +7,7 @@ import type {
   KnowledgeGraph,
   KnowledgePage,
   KnowledgeQueryResult,
+  ProjectionStoreDiagnostics,
 } from './domain'
 import {
   a2aKnowledgeSourceMessageUrlPolicyMessage,
@@ -14,6 +15,7 @@ import {
 } from './urlPolicy'
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
+const OPTIONAL_DIAGNOSTICS_TIMEOUT_MS = 2_000
 
 export interface KnowledgeEndpointClient {
   discover(connection: Connection, signal?: AbortSignal): Promise<Connection>
@@ -26,11 +28,12 @@ export interface KnowledgeEndpointClient {
 export class LlmWikiServeClient implements KnowledgeEndpointClient {
   async discover(connection: Connection, signal?: AbortSignal): Promise<Connection> {
     const started = performance.now()
-    const [manifest, graph] = await Promise.all([
+    const [manifest, graph, projectionStore] = await Promise.all([
       fetchJson<Record<string, unknown>>(joinUrl(connection.url, '/manifest'), { signal }, 'manifest'),
       this.graph(connection, signal),
+      fetchProjectionStoreDiagnostics(connection, signal),
     ])
-    return discoveredConnectionFromManifest(connection, manifest, graph, started)
+    return discoveredConnectionFromManifest(connection, manifest, graph, started, projectionStore)
   }
 
   async query(connection: Connection, query: string, signal?: AbortSignal): Promise<KnowledgeQueryResult> {
@@ -243,6 +246,7 @@ function discoveredConnectionFromManifest(
   manifest: Record<string, unknown>,
   graph: KnowledgeGraph,
   started: number,
+  projectionStore?: ProjectionStoreDiagnostics,
 ): Connection {
   return {
     ...connection,
@@ -258,6 +262,7 @@ function discoveredConnectionFromManifest(
     latencyMs: Math.round(performance.now() - started),
     error: '',
     diagnostic: undefined,
+    projectionStore,
   }
 }
 
@@ -282,7 +287,70 @@ function discoveredConnectionFromKnowledgePayload(
     latencyMs: Math.round(performance.now() - started),
     error: '',
     diagnostic: undefined,
+    projectionStore: undefined,
   }
+}
+
+async function fetchProjectionStoreDiagnostics(
+  connection: Connection,
+  signal?: AbortSignal,
+): Promise<ProjectionStoreDiagnostics | undefined> {
+  try {
+    const payload = await fetchJson<Record<string, unknown>>(
+      joinUrl(connection.url, '/diagnostics/projection-store'),
+      { signal },
+      'projection store diagnostics',
+      OPTIONAL_DIAGNOSTICS_TIMEOUT_MS,
+    )
+    return normalizeProjectionStoreDiagnostics(payload)
+  } catch {
+    return undefined
+  }
+}
+
+function normalizeProjectionStoreDiagnostics(payload: Record<string, unknown>): ProjectionStoreDiagnostics | undefined {
+  const diagnostics: ProjectionStoreDiagnostics = {
+    backend: readString(payload, 'backend'),
+    backendKind: readString(payload, 'backend_kind') || readString(payload, 'backendKind'),
+    namespace: readString(payload, 'namespace'),
+    cacheSourceId: readString(payload, 'cache_source_id') || readString(payload, 'cacheSourceId'),
+    available: readBooleanValue(payload.available),
+    lastError: readString(payload, 'last_error') || readString(payload, 'lastError'),
+    endpoint: safeProjectionStoreEndpointLabel(readString(payload, 'endpoint')),
+  }
+  return hasProjectionStoreDiagnosticsContent(diagnostics) ? diagnostics : undefined
+}
+
+function safeProjectionStoreEndpointLabel(value: string | undefined): string | undefined {
+  const clean = value?.trim()
+  if (!clean) return undefined
+  if (/[@?#\\\s]/.test(clean)) return undefined
+  if (/^(redis|rediss|valkey|valkeys|unix):\/\/<redacted>$/i.test(clean)) return clean
+
+  let parsed: URL
+  try {
+    parsed = new URL(clean)
+  } catch {
+    return undefined
+  }
+
+  const scheme = parsed.protocol.slice(0, -1).toLowerCase()
+  if (!['redis', 'rediss', 'valkey', 'valkeys'].includes(scheme)) return undefined
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || !parsed.hostname) return undefined
+  if (parsed.pathname && !/^\/\d+$/.test(parsed.pathname)) return undefined
+  return clean
+}
+
+function hasProjectionStoreDiagnosticsContent(diagnostics: ProjectionStoreDiagnostics): boolean {
+  return Boolean(
+    diagnostics.backend
+    || diagnostics.backendKind
+    || diagnostics.namespace
+    || diagnostics.cacheSourceId
+    || diagnostics.available !== undefined
+    || diagnostics.lastError
+    || diagnostics.endpoint,
+  )
 }
 
 let mcpRequestId = 0
