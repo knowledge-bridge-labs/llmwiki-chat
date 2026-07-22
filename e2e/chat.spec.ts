@@ -1502,9 +1502,17 @@ async function openKnowledgeSourcesSection(page: Page): Promise<void> {
 
 async function openSidebarSection(section: Locator): Promise<void> {
   const toggle = section.locator('.sidebar-section-toggle')
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+  await expect(toggle).toBeVisible()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if ((await toggle.getAttribute('aria-expanded')) === 'true') return
+    await toggle.scrollIntoViewIfNeeded()
     await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    try {
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true', { timeout: 1_000 })
+      return
+    } catch (error) {
+      if (attempt === 2) throw error
+    }
   }
 }
 
