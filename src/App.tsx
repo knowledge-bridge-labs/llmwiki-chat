@@ -561,6 +561,7 @@ function connectionUrlUpdate(url: string): Partial<Connection> {
     graph: undefined,
     error: '',
     diagnostic: undefined,
+    projectionStore: undefined,
   }
 }
 
@@ -777,7 +778,7 @@ export default function App() {
     setConnections((items) =>
       items.map((item) =>
         canApplySourceDiscovery(item, request, sourceDiscoveryRequests.current)
-          ? { ...item, status: 'checking', error: '', diagnostic: undefined }
+          ? { ...item, status: 'checking', error: '', diagnostic: undefined, projectionStore: undefined }
           : item,
       ),
     )
@@ -796,7 +797,7 @@ export default function App() {
       setConnections((items) =>
         items.map((item) =>
           canApplySourceDiscovery(item, request, sourceDiscoveryRequests.current)
-            ? { ...item, status: 'error', error: message, diagnostic, latencyMs: undefined }
+            ? { ...item, status: 'error', error: message, diagnostic, latencyMs: undefined, projectionStore: undefined }
             : item,
         ),
       )
@@ -3616,6 +3617,7 @@ function ConnectionList({
                 </button>
               </div>
             </div>
+            <ProjectionCacheStatus connection={connection} />
             <ConnectionCardDetails connection={connection} />
             <p className={`status-line ${sourceTestTone(connection)}`} aria-live="polite">
               {sourceTestCopy(connection)}
@@ -3754,6 +3756,16 @@ function ConnectionCardDetails({ connection }: { connection: Connection }) {
   )
 }
 
+function ProjectionCacheStatus({ connection }: { connection: Connection }) {
+  const projectionStoreSummary = projectionStoreSummaryLine(connection)
+  if (!projectionStoreSummary) return null
+  return (
+    <small className={projectionStoreSummary.available === false ? 'projection-cache-status unavailable' : 'projection-cache-status'}>
+      {projectionStoreSummary.label}
+    </small>
+  )
+}
+
 function ConnectionManifestMeta({ connection }: { connection: Connection }) {
   const items = connectionManifestMetaItems(connection)
 
@@ -3778,6 +3790,38 @@ function connectionManifestMetaItems(connection: Connection): Array<[string, str
     connection.implementation ? ['Implementation', connection.implementation] : null,
     typeof connection.pageCount === 'number' ? ['Pages', `${connection.approvedPageCount ?? 0}/${connection.pageCount} approved`] : null,
   ].filter((item): item is [string, string] => Boolean(item))
+}
+
+function projectionStoreSummaryLine(connection: Connection): { label: string; available?: boolean } | null {
+  const diagnostics = connection.projectionStore
+  if (!diagnostics) return null
+
+  const backendKind = diagnostics.backendKind?.trim().toLowerCase() || ''
+  const backend = diagnostics.backend?.trim().toLowerCase() || ''
+  const displayBackend = backendKind === 'redis' || backend.includes('redis')
+    ? 'Redis'
+    : backendKind === 'memory' || backend.includes('memory')
+      ? 'memory'
+      : diagnostics.backendKind?.trim() || diagnostics.backend?.trim()
+  if (!displayBackend) return null
+
+  const details = [
+    diagnostics.namespace?.trim() ? `namespace ${diagnostics.namespace.trim()}` : '',
+    diagnostics.endpoint?.trim() ? `endpoint ${diagnostics.endpoint.trim()}` : '',
+  ].filter(Boolean)
+  const lastError = redactedProjectionStoreError(diagnostics.lastError)
+  const availability = diagnostics.available === false
+    ? ` unavailable${lastError ? `: ${lastError}` : ''}`
+    : ''
+  const suffix = details.length ? ` (${details.join(' · ')})` : ''
+  return {
+    label: `Projection cache: ${displayBackend}${availability}${suffix}`,
+    available: diagnostics.available,
+  }
+}
+
+function redactedProjectionStoreError(value: string | undefined): string {
+  return (value || '').trim().replace(/\b[a-z][a-z\d+.-]*:\/\/\S+/gi, '[redacted URL]')
 }
 
 function compactCapabilitySummary(capabilities: string[]): string {

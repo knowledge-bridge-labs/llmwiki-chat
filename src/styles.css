@@ -1489,6 +1489,10 @@ dd,
   padding-left: 8px;
 }
 
+.projection-cache-status.unavailable {
+  color: #b42318;
+}
+
 .status-line.ready,
 .ask-status.ready {
   color: #17643a;
