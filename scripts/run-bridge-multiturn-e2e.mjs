@@ -20,7 +20,7 @@ let activeSourceProxy = null
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
-    console.error(`[bridge-multiturn] Received ${signal}; stopping local services.`)
+    logError(`Received ${signal}; stopping local services.`)
     await cleanupServices()
     process.exit(signal === 'SIGINT' ? 130 : 143)
   })
@@ -45,7 +45,7 @@ try {
   })
   process.exitCode = 0
 } catch (error) {
-  console.error(`[bridge-multiturn] ${formatError(error)}`)
+  logError(formatError(error))
   printDebugSummary()
   process.exitCode = 1
 } finally {
@@ -80,7 +80,7 @@ async function startOpenAiCompatibleRuntime() {
           sequence,
           method: request.method,
           path: url.pathname,
-          body,
+          body: redactSensitiveJson(body),
         })
 
         const query = currentQuestionFromOpenAiBody(body) || `runtime request ${sequence}`
@@ -109,14 +109,15 @@ async function startOpenAiCompatibleRuntime() {
       }
 
       writeJson(response, 404, { error: 'not found' })
-    } catch (error) {
-      writeJson(response, 500, { error: formatError(error) })
+    } catch {
+      logError('Test runtime request failed.')
+      writeJson(response, 500, { error: 'test runtime request failed' })
     }
   })
 
   const url = await listen(server, 0, 'OpenAI-compatible runtime')
   httpServers.push(server)
-  console.log(`[bridge-multiturn] Starting test-only OpenAI-compatible runtime at ${url}`)
+  logInfo(`Starting test-only OpenAI-compatible runtime at ${url}`)
   return {
     url,
     baseUrl: `${url}/v1`,
@@ -130,7 +131,7 @@ async function resolveSourceTargetUrl() {
     || normalizeUrl((process.env.LLMWIKI_SAMPLE_MATRIX_URLS || '').split(',')[0])
     || normalizeUrl(process.env.LLMWIKI_LIVE_SERVE_URL)
   if (existing) {
-    console.log(`[bridge-multiturn] Using existing source target ${existing}`)
+    logInfo(`Using existing source target ${existing}`)
     await waitForSource(existing, 'existing source target')
     return existing
   }
@@ -161,18 +162,18 @@ async function startServeSampleSource() {
   if (forceSync && !skipSync) {
     const syncArgs = ['sync', '--extra', 'dev']
     if (existsSync(join(serveRoot, 'uv.lock'))) syncArgs.push('--locked')
-    console.log(`[bridge-multiturn] Syncing llmwiki-serve dependencies in ${serveRoot}`)
+    logInfo(`Syncing llmwiki-serve dependencies in ${serveRoot}`)
     await runCommand(uvCommand, syncArgs, { cwd: serveRoot })
   } else if (serveExecutable && !forceSync) {
-    console.log(`[bridge-multiturn] Reusing existing llmwiki-serve executable at ${serveExecutable}`)
+    logInfo(`Reusing existing llmwiki-serve executable at ${serveExecutable}`)
   } else {
-    console.log('[bridge-multiturn] No llmwiki-serve executable found; starting with uv run --no-sync. Set LLMWIKI_BRIDGE_MULTITURN_FORCE_SYNC=1 to opt into dependency sync.')
+    logInfo('No llmwiki-serve executable found; starting with uv run --no-sync. Set LLMWIKI_BRIDGE_MULTITURN_FORCE_SYNC=1 to opt into dependency sync.')
   }
 
   const port = parsePort(process.env.LLMWIKI_BRIDGE_MULTITURN_SOURCE_PORT, 'LLMWIKI_BRIDGE_MULTITURN_SOURCE_PORT')
     || await findOpenPort()
   const url = `http://127.0.0.1:${port}`
-  console.log(`[bridge-multiturn] Starting llmwiki-serve sample source at ${url}`)
+  logInfo(`Starting llmwiki-serve sample source at ${url}`)
   const child = startServeProcess(serveRoot, sampleRoot, port)
   childProcesses.push(child)
   await waitForHealth(`${url}/health`, child, 'llmwiki-serve')
@@ -209,9 +210,9 @@ async function startRecordingSourceProxy(targetUrl) {
         sequence: requests.length + 1,
         method: request.method || 'GET',
         path: url.pathname,
-        search: url.search,
-        body: parseJsonText(bodyText),
-        bodyText,
+        search: redactUrlSearch(url.search),
+        body: redactSensitiveJson(parseJsonText(bodyText)),
+        bodyByteLength: bodyBuffer.byteLength,
       })
 
       const upstreamUrl = `${targetBase}${url.pathname}${url.search}`
@@ -224,18 +225,19 @@ async function startRecordingSourceProxy(targetUrl) {
       const upstreamBody = Buffer.from(await upstreamResponse.arrayBuffer())
       response.writeHead(upstreamResponse.status, responseHeaders(upstreamResponse.headers))
       response.end(upstreamBody)
-    } catch (error) {
+    } catch {
+      logError('Source proxy request failed.')
       errors.push({
         sequence: errors.length + 1,
-        message: formatError(error),
+        message: 'source proxy request failed',
       })
-      writeJson(response, 502, { error: formatError(error) }, corsHeaders())
+      writeJson(response, 502, { error: 'source proxy request failed' }, corsHeaders())
     }
   })
 
   const url = await listen(server, 0, 'source proxy')
   httpServers.push(server)
-  console.log(`[bridge-multiturn] Starting recording source proxy at ${url} -> ${targetBase}`)
+  logInfo(`Starting recording source proxy at ${url} -> ${targetBase}`)
   await waitForSource(url, 'recording source proxy')
   return {
     url,
@@ -270,7 +272,7 @@ async function startBridge(runtimeBaseUrl) {
   const port = parsePort(process.env.LLMWIKI_BRIDGE_MULTITURN_BRIDGE_PORT, 'LLMWIKI_BRIDGE_MULTITURN_BRIDGE_PORT')
     || await findOpenPort()
   const url = `http://127.0.0.1:${port}`
-  console.log(`[bridge-multiturn] Starting llmwiki-agent-bridge at ${url}`)
+  logInfo(`Starting llmwiki-agent-bridge at ${url}`)
   const child = startChild(process.execPath, [bridgeEntry], {
     cwd: bridgeRoot,
     env: {
@@ -394,16 +396,9 @@ function startChild(command, args, options = {}) {
     env: options.env || process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  child.output = { stdout: '', stderr: '' }
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk) => {
-    child.output.stdout = rememberOutput(child.output.stdout, chunk)
-    if (process.env[options.verboseEnv] === '1') process.stdout.write(chunk)
-  })
-  child.stderr.on('data', (chunk) => {
-    child.output.stderr = rememberOutput(child.output.stderr, chunk)
-    if (process.env[options.verboseEnv] === '1') process.stderr.write(chunk)
+  captureSanitizedOutput(child, {
+    stdout: process.env[options.verboseEnv] === '1' ? process.stdout : null,
+    stderr: process.env[options.verboseEnv] === '1' ? process.stderr : null,
   })
   return child
 }
@@ -415,7 +410,7 @@ async function waitForSource(url, label) {
       try {
         const response = await fetchWithTimeout(`${url}${path}`, 750)
         if (response.ok) {
-          console.log(`[bridge-multiturn] ${label} is reachable at ${url}`)
+          logInfo(`${label} is reachable at ${url}`)
           return
         }
       } catch {
@@ -433,7 +428,7 @@ async function waitForHealth(url, child, label) {
     exitMessage = `${label} exited before ready: code ${code ?? 'n/a'}, signal ${signal ?? 'n/a'}.`
   })
   child.once('error', (error) => {
-    exitMessage = `${label} failed to start: ${error.message}.`
+    exitMessage = `${label} failed to start: ${formatError(error)}.`
   })
 
   const deadline = Date.now() + 30_000
@@ -442,7 +437,7 @@ async function waitForHealth(url, child, label) {
     try {
       const response = await fetchWithTimeout(url, 750)
       if (response.ok) {
-        console.log(`[bridge-multiturn] ${label} is healthy at ${url}`)
+        logInfo(`${label} is healthy at ${url}`)
         return
       }
     } catch {
@@ -458,7 +453,11 @@ function runCommand(command, args, options = {}) {
     const child = spawn(command, args, {
       cwd: options.cwd || chatRoot,
       env: options.env || process.env,
-      stdio: options.stdio || 'inherit',
+      stdio: options.stdio || ['ignore', 'pipe', 'pipe'],
+    })
+    captureSanitizedOutput(child, {
+      stdout: options.stdio === 'ignore' ? null : process.stdout,
+      stderr: options.stdio === 'ignore' ? null : process.stderr,
     })
     child.once('error', rejectCommand)
     child.once('exit', (code, signal) => {
@@ -466,7 +465,7 @@ function runCommand(command, args, options = {}) {
         resolveCommand()
         return
       }
-      rejectCommand(new Error(`${command} ${args.join(' ')} exited with ${formatExit(code, signal)}`))
+      rejectCommand(new Error(`${command} ${args.join(' ')} exited with ${formatExit(code, signal)}${formatProcessOutput(child)}`))
     })
   })
 }
@@ -598,7 +597,7 @@ function writeJson(response, statusCode, payload, extraHeaders = {}) {
     'Content-Type': 'application/json',
     ...extraHeaders,
   })
-  response.end(JSON.stringify(payload))
+  response.end(JSON.stringify(redactSensitiveJson(payload)))
 }
 
 function corsHeaders() {
@@ -687,9 +686,29 @@ function rememberOutput(previous, chunk) {
   return `${previous}${chunk}`.slice(-8_000)
 }
 
+function captureSanitizedOutput(child, streams = {}) {
+  child.output = { stdout: '', stderr: '' }
+  if (child.stdout) {
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      const sanitizedChunk = sanitizeDiagnosticText(chunk)
+      child.output.stdout = rememberOutput(child.output.stdout, sanitizedChunk)
+      streams.stdout?.write(sanitizedChunk)
+    })
+  }
+  if (child.stderr) {
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => {
+      const sanitizedChunk = sanitizeDiagnosticText(chunk)
+      child.output.stderr = rememberOutput(child.output.stderr, sanitizedChunk)
+      streams.stderr?.write(sanitizedChunk)
+    })
+  }
+}
+
 function formatProcessOutput(child) {
-  const stdout = child.output?.stdout?.trim()
-  const stderr = child.output?.stderr?.trim()
+  const stdout = sanitizeDiagnosticText(child.output?.stdout || '').trim()
+  const stderr = sanitizeDiagnosticText(child.output?.stderr || '').trim()
   const parts = []
   if (stdout) parts.push(`stdout:\n${stdout}`)
   if (stderr) parts.push(`stderr:\n${stderr}`)
@@ -700,8 +719,103 @@ function formatExit(code, signal) {
   return `code ${code ?? 'n/a'}, signal ${signal ?? 'n/a'}`
 }
 
+function logInfo(message) {
+  console.log(`[bridge-multiturn] ${sanitizeDiagnosticText(message)}`)
+}
+
+function logError(message) {
+  console.error(`[bridge-multiturn] ${sanitizeDiagnosticText(message)}`)
+}
+
 function formatError(error) {
-  return error instanceof Error ? error.message : String(error)
+  const message = error instanceof Error ? error.message : String(error)
+  return sanitizeDiagnosticText(message)
+}
+
+function redactSensitiveJson(value, seen = new WeakSet()) {
+  if (Array.isArray(value)) return value.map((item) => redactSensitiveJson(item, seen))
+  if (value && typeof value === 'object') {
+    if (seen.has(value)) return '[circular]'
+    seen.add(value)
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        isSensitiveKey(key) || key.toLowerCase() === 'stack'
+          ? '[redacted]'
+          : redactSensitiveJson(item, seen),
+      ]),
+    )
+  }
+  return typeof value === 'string' ? sanitizeDiagnosticText(value) : value
+}
+
+function isSensitiveKey(key) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return [
+    'authorization',
+    'apikey',
+    'xapikey',
+    'password',
+    'secret',
+    'credential',
+    'cookie',
+  ].includes(normalized)
+    || normalized.endsWith('apikey')
+    || normalized.endsWith('password')
+    || normalized.endsWith('secret')
+    || normalized.endsWith('credential')
+    || normalized.endsWith('cookie')
+    || (normalized.endsWith('token') && !normalized.endsWith('tokens'))
+}
+
+function redactUrlSearch(search) {
+  if (!search) return ''
+  const params = new URLSearchParams(search)
+  for (const key of params.keys()) {
+    if (isSensitiveKey(key)) params.set(key, '[redacted]')
+  }
+  const serialized = params.toString()
+  return serialized ? `?${serialized}` : ''
+}
+
+function sanitizeDiagnosticText(value) {
+  return stripStackFrames(redactInlineSecrets(redactKnownLocalPaths(String(value))))
+}
+
+function redactInlineSecrets(value) {
+  return value
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/\b(https?:\/\/)([^@\s/?#]+):([^@\s/?#]+)@/gi, '$1[redacted]@')
+    .replace(/([?&](?:api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|password|secret)=)[^&#\s]+/gi, '$1[redacted]')
+    .replace(/(\bauthorization\s*[:=]\s*)(['"]?)[^\s,'"]+\2/gi, '$1[redacted]')
+    .replace(/(\b(?:api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|password|secret)\s*[:=]\s*)(['"]?)[^\s,'"]+\2/gi, '$1[redacted]')
+}
+
+function redactKnownLocalPaths(value) {
+  const workspaceRoot = dirname(chatRoot)
+  return value
+    .replaceAll(chatRoot, '<llmwiki-chat>')
+    .replaceAll(workspaceRoot, '<workspace>')
+}
+
+function stripStackFrames(value) {
+  const lines = value.split(/\r?\n/)
+  let omitted = 0
+  const kept = []
+  for (const line of lines) {
+    if (isStackFrameLine(line)) {
+      omitted += 1
+      continue
+    }
+    kept.push(line)
+  }
+  if (omitted > 0) kept.push(`[${omitted} stack frame${omitted === 1 ? '' : 's'} omitted]`)
+  return kept.join('\n')
+}
+
+function isStackFrameLine(line) {
+  return /^\s+at\s.+(?:\:\d+\:\d+|\))$/.test(line)
+    || /^\s*File ".*", line \d+, in .+$/.test(line)
 }
 
 function readString(record, key) {
@@ -711,9 +825,9 @@ function readString(record, key) {
 
 function printDebugSummary() {
   if (activeRuntime?.snapshot) {
-    console.error(`[bridge-multiturn] Runtime debug summary: ${JSON.stringify(activeRuntime.snapshot())}`)
+    logError(`Runtime debug summary: ${JSON.stringify(redactSensitiveJson(activeRuntime.snapshot()))}`)
   }
   if (activeSourceProxy?.snapshot) {
-    console.error(`[bridge-multiturn] Source proxy debug summary: ${JSON.stringify(activeSourceProxy.snapshot())}`)
+    logError(`Source proxy debug summary: ${JSON.stringify(redactSensitiveJson(activeSourceProxy.snapshot()))}`)
   }
 }
