@@ -210,10 +210,12 @@ runtime, and `generic` for any other OpenAI-compatible chat completions
 runtime. If the runtime requires provider authentication, keep
 `LLMWIKI_AGENT_BRIDGE_API_KEY` in the bridge process environment.
 
-Then open `llmwiki-chat`, choose the matching named bridge slot or `Custom A2A`,
-enter the bridge URL such as `http://127.0.0.1:8788`, click `Test bridge`, and
-ask normally after the bridge reports ready. Named slots become ready only when
-the bridge agent card identity matches the selected slot.
+Then open `llmwiki-chat`, choose the matching Agent Bridge slot, enter the
+bridge URL such as `http://127.0.0.1:8788`, click `Test bridge`, and ask
+normally after the bridge reports ready. Named slots become ready only when the
+bridge agent card identity matches the selected slot. Use `Custom A2A` only
+when you want to treat an endpoint as a generic non-bridge A2A runtime; that
+runtime path does not receive bridge orchestration fields.
 
 The Agent Bridge runtime card has two independent choices:
 
@@ -267,7 +269,7 @@ only that runtime bearer token to bridge discovery and `message:send`. Provider
 API keys authorize bridge-to-runtime requests and stay in the bridge process
 environment.
 
-Example request body:
+Example Agent Bridge A2A request body:
 
 ```json
 {
@@ -297,9 +299,9 @@ Example request body:
         "latestRole": "user"
       },
       "selectedRuntime": {
-        "id": "custom-a2a",
-        "name": "Custom A2A",
-        "protocol": "custom-a2a"
+        "id": "bridge-a2a",
+        "name": "Local Agent Bridge (A2A)",
+        "protocol": "bridge-a2a"
       },
       "selectedKnowledgeSourceCount": 1,
       "selectedKnowledgeSources": [
