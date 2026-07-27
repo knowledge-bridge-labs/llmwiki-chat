@@ -34,8 +34,12 @@ Before publishing a versioned release:
    npm run test:e2e:a2a-runtime
    npm run build
    npm run pack:dry-run
-   npm audit --audit-level=moderate
+   npm run audit:production
    ```
+
+   The release audit gate covers production dependencies shipped to npm. Track
+   dev-only audit findings as toolchain maintenance unless they affect packaged
+   runtime code, credential handling, or a release workflow execution path.
 
 3. For Knowledge Source endpoint compatibility claims, smoke test against a real
    local `llmwiki-serve` endpoint using each affected protocol:
@@ -114,8 +118,8 @@ The workflow lives at `.github/workflows/publish.yml`, runs on
 `workflow_dispatch` and published GitHub releases, uses the `npm` environment,
 grants only `contents: read` and `id-token: write`, runs on GitHub-hosted
 Ubuntu with Node 24, installs with `npm ci`, runs lint, typecheck, unit tests,
-Playwright Chromium E2E tests, the release package gate, and audit, then runs
-plain `npm publish` with lifecycle scripts enabled.
+Playwright Chromium E2E tests, the release package gate, and production
+dependency audit, then runs plain `npm publish` with lifecycle scripts enabled.
 
 Do not add token-based publishing secrets to this workflow. Trusted Publishing
 uses GitHub Actions OIDC for tokenless publishing.

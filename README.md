@@ -151,10 +151,10 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public preview and published as `llmwiki-chat@0.1.4`.
-Source checkout remains supported for local development and release checks.
-See the [release checklist](docs/release.md) and hosted release status for the
-current posture.
+`llmwiki-chat` is in public preview. The current patch release candidate is
+`llmwiki-chat@0.1.5`; source checkout remains supported for local development
+and release checks. See the [release checklist](docs/release.md) and hosted
+release status for the current posture.
 
 ## Demo
 
@@ -204,14 +204,14 @@ targets.
 | `llmwiki-docs` | Cross-repo documentation portal. | You need the quickstart, protocol map, deployment posture, and release checklist in one place. | `npm run check` |
 
 Use `llmwiki-agent-bridge` when an OpenAI-compatible local runtime should sit
-behind an A2A-style endpoint for `llmwiki-chat`. The public-preview bridge
-package is `llmwiki-agent-bridge@0.1.0`:
+behind an A2A-style endpoint for `llmwiki-chat`. The current public-preview
+bridge package is `llmwiki-agent-bridge@0.2.1`:
 
 ```bash
 LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
 LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
 LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
-npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge
+npm exec --package llmwiki-agent-bridge@0.2.1 -- llmwiki-agent-bridge
 ```
 
 For bridge development or release checks, a sibling source checkout remains
@@ -279,8 +279,8 @@ runtime, or production web server.
 Source checkout usage remains supported for local development and release
 checks. Consumers can unpack the package and host the static `dist/` directory
 with their preferred web server. Runtime bridge workflows use the separate
-`llmwiki-agent-bridge@0.1.0` package with
-`npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge`, or a
+`llmwiki-agent-bridge` package with
+`npm exec --package llmwiki-agent-bridge@latest -- llmwiki-agent-bridge`, or a
 bridge source checkout for bridge development and release checks.
 
 ## Supported Usage Modes

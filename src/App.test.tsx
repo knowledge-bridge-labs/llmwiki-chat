@@ -552,8 +552,8 @@ describe('LLMWiki Chat', () => {
     expect(within(quickstart).queryByRole('region', { name: 'Step 2 runtime choice' })).not.toBeInTheDocument()
     expect(within(quickstart).queryByRole('button', { name: 'Use Local Development Runtime' })).not.toBeInTheDocument()
     expect(within(quickstart).queryByRole('button', { name: 'Test local bridge' })).not.toBeInTheDocument()
-    expect(within(quickstart).queryByText(/Hermes|DeepAgents|llmwiki-agent-bridge@0\.1\.0/)).not.toBeInTheDocument()
-    expect(within(quickstart).getByText(/llmwiki-serve==0\.2\.0/)).toBeInTheDocument()
+    expect(within(quickstart).queryByText(/Hermes|DeepAgents|llmwiki-agent-bridge@latest/)).not.toBeInTheDocument()
+    expect(within(quickstart).getByText(/llmwiki-serve==0\.2\.2/)).toBeInTheDocument()
     expect(within(quickstart).getByText('/path/to/wiki')).toBeInTheDocument()
 
     fetchMock.mockClear()
@@ -569,7 +569,7 @@ describe('LLMWiki Chat', () => {
     expect(within(runtimeStep).getByRole('button', { name: 'Continue serve-only' })).toBeEnabled()
     expect(within(runtimeStep).getByRole('button', { name: 'Show optional bridge/runtime steps' })).toHaveAttribute('aria-expanded', 'false')
     expect(within(runtimeStep).queryByRole('button', { name: 'Test local bridge' })).not.toBeInTheDocument()
-    expect(within(runtimeStep).queryByText(/Hermes|DeepAgents|llmwiki-agent-bridge@0\.1\.0/)).not.toBeInTheDocument()
+    expect(within(runtimeStep).queryByText(/Hermes|DeepAgents|llmwiki-agent-bridge@latest/)).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Local Development Runtime/ })).toBeChecked()
     expect(screen.getByRole('button', { name: 'Ask: What is in this wiki?' })).toBeEnabled()
 
@@ -590,7 +590,7 @@ describe('LLMWiki Chat', () => {
       'https://github.com/knowledge-bridge-labs/llmwiki-agent-bridge#readme',
     )
     expect(within(advancedRuntime).getByRole('button', { name: 'Test local bridge' })).toBeInTheDocument()
-    expect(within(advancedRuntime).getByText(/llmwiki-agent-bridge@0\.1\.0/)).toBeInTheDocument()
+    expect(within(advancedRuntime).getByText(/llmwiki-agent-bridge@latest/)).toBeInTheDocument()
 
     fetchMock.mockClear()
     await user.click(within(advancedRuntime).getByRole('button', { name: 'Test local bridge' }))
