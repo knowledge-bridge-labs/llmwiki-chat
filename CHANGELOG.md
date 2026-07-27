@@ -9,6 +9,13 @@ begin. Dates use `YYYY-MM-DD`.
 
 - _No changes yet._
 
+## 0.1.6 - 2026-07-27
+
+- Corrected public package metadata after the `0.1.5` publish so npm README and
+  security guidance describe the current preview package as a published release.
+- Refreshed package and generated license metadata for the `0.1.6` npm patch
+  release.
+
 ## 0.1.5 - 2026-07-27
 
 - Updated public Agent Bridge setup references from a stale fixed package pin
@@ -22,7 +29,7 @@ begin. Dates use `YYYY-MM-DD`.
   ESLint toolchain advisories do not block release of an unaffected runtime
   package.
 - Refreshed package, README, generated license, and security metadata for the
-  `0.1.5` npm patch release candidate.
+  `0.1.5` npm patch release.
 
 ## 0.1.4 - 2026-07-22
 
