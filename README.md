@@ -151,8 +151,8 @@ the surrounding network is protected.
 
 ## Release Status
 
-`llmwiki-chat` is in public preview. The current patch release candidate is
-`llmwiki-chat@0.1.5`; source checkout remains supported for local development
+`llmwiki-chat` is in public preview. The current npm patch release is
+`llmwiki-chat@0.1.6`; source checkout remains supported for local development
 and release checks. See the [release checklist](docs/release.md) and hosted
 release status for the current posture.
 
