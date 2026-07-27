@@ -76,7 +76,7 @@ const starterConnections: Connection[] = [
 ]
 
 const quickstartServeCommand = [
-  'uvx --from llmwiki-serve==0.2.0 llmwiki-serve serve /path/to/wiki --host 127.0.0.1 --port 8765',
+  'uvx --from llmwiki-serve==0.2.2 llmwiki-serve serve /path/to/wiki --host 127.0.0.1 --port 8765',
 ]
 const quickstartSampleServeCommand = [
   'git clone https://github.com/knowledge-bridge-labs/llmwiki-serve.git',
@@ -85,7 +85,7 @@ const quickstartSampleServeCommand = [
   'uv run llmwiki-serve serve ./examples/sample-wiki --host 127.0.0.1 --port 8765',
 ]
 const quickstartBridgeCommand = [
-  'npm exec --package llmwiki-agent-bridge@0.1.0 -- llmwiki-agent-bridge',
+  'npm exec --package llmwiki-agent-bridge@latest -- llmwiki-agent-bridge',
 ]
 const quickstartDocsUrl = 'https://knowledge-bridge-labs.github.io/llmwiki-docs/quickstart'
 const runtimeAdapterDocsUrl = 'https://knowledge-bridge-labs.github.io/llmwiki-docs/runtime-adapters'

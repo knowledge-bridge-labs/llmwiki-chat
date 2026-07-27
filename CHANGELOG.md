@@ -9,6 +9,21 @@ begin. Dates use `YYYY-MM-DD`.
 
 - _No changes yet._
 
+## 0.1.5 - 2026-07-27
+
+- Updated public Agent Bridge setup references from a stale fixed package pin
+  to the current `llmwiki-agent-bridge@0.2.1` release or the non-pinning
+  `@latest` install hint used by the UI quickstart.
+- Updated the UI quickstart package install hint to the current
+  `llmwiki-serve==0.2.2` PyPI release.
+- Narrowed the npm package docs surface to public documentation and assets so
+  internal planning and decision notes are not shipped.
+- Scoped CI and publish audit gates to production dependencies so dev-only
+  ESLint toolchain advisories do not block release of an unaffected runtime
+  package.
+- Refreshed package, README, generated license, and security metadata for the
+  `0.1.5` npm patch release candidate.
+
 ## 0.1.4 - 2026-07-22
 
 - Added projection-cache diagnostics to direct `llmwiki-serve` source cards so

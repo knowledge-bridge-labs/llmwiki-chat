@@ -51,7 +51,7 @@ compatibility, security, documentation, or project maintenance impact. -->
 - [ ] `npm run test:e2e:live` when Knowledge Source endpoint compatibility changed
 - [ ] `npm run build`
 - [ ] `npm run pack:dry-run`
-- [ ] `npm audit --audit-level=moderate`
+- [ ] `npm run audit:production`
 
 <!-- For documentation-only changes, mark skipped checks as not run and explain why. -->
 

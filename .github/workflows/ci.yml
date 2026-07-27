@@ -63,5 +63,5 @@ jobs:
       - name: Package dry run
         run: npm run pack:dry-run
 
-      - name: Dependency audit
-        run: npm audit --audit-level=moderate
+      - name: Production dependency audit
+        run: npm run audit:production

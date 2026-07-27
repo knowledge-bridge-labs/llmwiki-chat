@@ -84,7 +84,7 @@ test('cold-start no-services first-time screen stays calm', async ({ page }) => 
   await expect(sourceStep).toContainText('If this check fails or stays unknown')
   await page.setViewportSize({ width: 500, height: 720 })
   await quickstart.getByText('Show llmwiki-serve commands').click()
-  await expect(quickstart).toContainText('uvx --from llmwiki-serve==0.2.0')
+  await expect(quickstart).toContainText('uvx --from llmwiki-serve==0.2.2')
   await expectQuickstartPanelNoHorizontalOverflow(page)
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(quickstart.getByRole('region', { name: 'Step 2 runtime choice' })).toHaveCount(0)
@@ -615,7 +615,7 @@ test('shows browser-safe quickstart commands and reuses source checks', async ({
   await expect(quickstart).not.toContainText('Hermes')
   await expect(quickstart).not.toContainText('DeepAgents')
   await expect(quickstart).not.toContainText('llmwiki-agent-bridge@0.1.0')
-  await expect(quickstart).toContainText('llmwiki-serve==0.2.0')
+  await expect(quickstart).toContainText('llmwiki-serve==0.2.2')
   await expect(quickstart).toContainText('/path/to/wiki')
 
   await page.setViewportSize({ width: 500, height: 720 })

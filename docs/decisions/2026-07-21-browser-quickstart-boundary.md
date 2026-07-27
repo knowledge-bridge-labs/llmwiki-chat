@@ -24,7 +24,7 @@ Process ownership remains outside the browser:
 - `llmwiki-serve` serves the selected wiki folder.
 - `llmwiki-agent-bridge` may later expose an explicit local-only setup API for
   managed source/runtime orchestration.
-- Hermes, DeepAgents, vLLM, or OpenAI-compatible runtimes own model execution,
+- Hermes, DeepAgents, or other OpenAI-compatible runtimes own model execution,
   history, and provider credentials.
 
 ## Consequences

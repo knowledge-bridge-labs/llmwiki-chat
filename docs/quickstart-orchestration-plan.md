@@ -24,7 +24,7 @@ Implemented success means:
    `llmwiki-serve`,
 5. Step 2 appears only after source readiness and makes Local Development
    Runtime / serve-only inspection the default path,
-6. `llmwiki-agent-bridge@0.1.0`, Hermes, DeepAgents, and generic
+6. `llmwiki-agent-bridge@0.2.1`, Hermes, DeepAgents, and generic
    OpenAI-compatible runtime guidance appear only inside optional advanced
    runtime setup,
 7. missing bridge/runtime setup can be skipped without blocking serve-only use,
@@ -92,7 +92,7 @@ user confirmation.
 | `llmwiki-chat` | Implemented: opt-in source-first Quickstart panel, browser/process boundary copy, copyable commands, existing source/runtime probe actions, Local Development Runtime serve-only path, optional bridge/runtime disclosure, local log display, user choices. Future: calls to a trusted local setup API. |
 | `llmwiki-agent-bridge` | Implemented: external A2A-style bridge runtime and bridge-managed source discovery when already running. Future: local setup API, runtime/source settings, verification, safe command orchestration. |
 | `llmwiki-serve` | Serve selected wiki source, expose source bundle/query/graph endpoints |
-| Hermes / DeepAgents / vLLM | Runtime execution, native history/prompt/prefix cache |
+| Hermes / DeepAgents / OpenAI-compatible runtime | Runtime execution, native history/prompt/prefix cache |
 
 `llmwiki-chat` must not directly run arbitrary shell commands. Future managed
 automation should call a local-only setup surface exposed by a trusted helper.
@@ -120,7 +120,7 @@ and provides a reliable browser-guided local path:
 
 - detect bridge status,
 - show commands for sample `llmwiki-serve`,
-- show the package command for `llmwiki-agent-bridge@0.1.0`,
+- show the package command for `llmwiki-agent-bridge@latest`,
 - test the selected sample source,
 - reveal serve-only Local Development Runtime continuation after source readiness,
 - show and test the local bridge only from optional advanced setup,
@@ -186,7 +186,8 @@ Future:
 - Should local wiki path selection use a browser file picker, typed path, or a
   native helper?
 - How should multiple concurrently served wiki sources be named and stopped?
-- Which runtime install flows are acceptable for Windows, Linux, and remote DGX
+- Which runtime install flows are acceptable for Windows, Linux, and remote
+  accelerator-host setups
   setups?
 - Should quickstart be exposed in production builds by default or hidden behind
   a local setup mode?
