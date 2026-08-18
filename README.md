@@ -16,6 +16,9 @@ Use it when:
 In the toolchain, `llmwiki-serve` serves evidence, `llmwiki-agent-bridge` can
 synthesize answers through an OpenAI-compatible runtime, and `llmwiki-chat`
 provides the browser inspection and review surface.
+SQLite GraphStore is a `llmwiki-serve` setting: version `0.2.10` and newer
+include it in the base serve package, it remains off by default, and chat or
+bridge packages do not need an extra install.
 
 [![CI](https://github.com/knowledge-bridge-labs/llmwiki-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/knowledge-bridge-labs/llmwiki-chat/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
@@ -205,13 +208,13 @@ targets.
 
 Use `llmwiki-agent-bridge` when an OpenAI-compatible local runtime should sit
 behind an A2A-style endpoint for `llmwiki-chat`. The current public-preview
-bridge package is `llmwiki-agent-bridge@0.2.1`:
+bridge package is `llmwiki-agent-bridge@0.4.0`:
 
 ```bash
 LLMWIKI_AGENT_BRIDGE_BASE_URL=http://127.0.0.1:8642/v1 \
 LLMWIKI_AGENT_BRIDGE_MODEL=local-model \
 LLMWIKI_AGENT_BRIDGE_RUNTIME_PROFILE=generic \
-npm exec --package llmwiki-agent-bridge@0.2.1 -- llmwiki-agent-bridge
+npm exec --package llmwiki-agent-bridge@0.4.0 -- llmwiki-agent-bridge
 ```
 
 For bridge development or release checks, a sibling source checkout remains
